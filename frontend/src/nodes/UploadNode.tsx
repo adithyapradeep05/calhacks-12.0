@@ -8,18 +8,22 @@ import { Button } from '@/components/ui/button';
 const UploadNode = ({ id, data }: NodeProps) => {
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
   const { updateNodeData, updateNodeStatus, setSelectedNode } = useWorkflowStore();
 
   const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
+      console.log('File selected:', selectedFile.name, 'Size:', selectedFile.size);
       const validTypes = ['.pdf', '.txt', '.md'];
       const isValid = validTypes.some(ext => selectedFile.name.toLowerCase().endsWith(ext));
       
       if (isValid) {
         setFile(selectedFile);
         updateNodeStatus(id, 'ready');
+        console.log('File is valid, ready for upload');
       } else {
+        console.log('Invalid file type:', selectedFile.name);
         alert('Please select a .pdf, .txt, or .md file');
       }
     }
@@ -32,20 +36,59 @@ const UploadNode = ({ id, data }: NodeProps) => {
     updateNodeStatus(id, 'running');
 
     try {
+      console.log('Starting upload for file:', file.name);
       const result = await uploadFile(file);
+      console.log('Upload successful:', result);
+      
       updateNodeData(id, {
         config: { filename: result.filename },
         result: result,
         status: 'success',
       });
       updateNodeStatus(id, 'success');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Upload failed:', error);
+      const errorMessage = error.response?.data?.detail || error.message || 'Upload failed';
+      console.error('Error details:', errorMessage);
       updateNodeStatus(id, 'error');
+      
+      // Show user-friendly error message
+      alert(`Upload failed: ${errorMessage}`);
     } finally {
       setUploading(false);
     }
   }, [file, id, updateNodeData, updateNodeStatus]);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    
+    const droppedFile = e.dataTransfer.files[0];
+    if (droppedFile) {
+      console.log('File dropped:', droppedFile.name, 'Size:', droppedFile.size);
+      const validTypes = ['.pdf', '.txt', '.md'];
+      const isValid = validTypes.some(ext => droppedFile.name.toLowerCase().endsWith(ext));
+      
+      if (isValid) {
+        setFile(droppedFile);
+        updateNodeStatus(id, 'ready');
+        console.log('Dropped file is valid, ready for upload');
+      } else {
+        console.log('Invalid dropped file type:', droppedFile.name);
+        alert('Please drop a .pdf, .txt, or .md file');
+      }
+    }
+  }, [id, updateNodeStatus]);
 
   const statusColors = {
     idle: 'border-node-uploadBorder',
@@ -76,7 +119,16 @@ const UploadNode = ({ id, data }: NodeProps) => {
         </div>
 
         <div className="space-y-3">
-          <div className="border-2 border-dashed border-border rounded-lg p-4 text-center">
+          <div 
+            className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors ${
+              dragOver ? 'border-primary bg-primary/5' : 
+              file ? 'border-green-500 bg-green-50' : 
+              'border-border hover:border-primary/50'
+            }`}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
             <input
               type="file"
               id={`file-${id}`}
@@ -85,15 +137,19 @@ const UploadNode = ({ id, data }: NodeProps) => {
               onChange={handleFileChange}
               disabled={uploading}
             />
-            <label htmlFor={`file-${id}`} className="cursor-pointer">
+            <label htmlFor={`file-${id}`} className="cursor-pointer block">
               {file ? (
                 <div className="flex items-center gap-2 justify-center text-sm">
-                  <FileText className="w-4 h-4" />
-                  <span className="font-medium">{file.name}</span>
+                  <FileText className="w-4 h-4 text-green-600" />
+                  <span className="font-medium text-green-700">{file.name}</span>
+                  <span className="text-xs text-muted-foreground">({Math.round(file.size / 1024)} KB)</span>
                 </div>
               ) : (
                 <div className="text-sm text-muted-foreground">
-                  Click to select file (.pdf, .txt, .md)
+                  <div className="mb-2">
+                    {dragOver ? '📁 Drop file here' : '📁 Click to select file or drag & drop'}
+                  </div>
+                  <div className="text-xs">Supports: .pdf, .txt, .md</div>
                 </div>
               )}
             </label>
@@ -105,7 +161,10 @@ const UploadNode = ({ id, data }: NodeProps) => {
             className="w-full"
             size="sm"
           >
-            {uploading ? 'Uploading...' : data.status === 'success' ? 'Uploaded' : 'Upload'}
+            {uploading ? 'Uploading...' : 
+             data.status === 'success' ? '✅ Uploaded' : 
+             !file ? 'Select a file first' : 
+             '📤 Upload File'}
           </Button>
 
           {data.config?.filename && (
