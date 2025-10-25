@@ -33,7 +33,7 @@ const LLMNode = ({ id, data }: NodeProps) => {
         <div className="space-y-2 text-sm">
           <div className="flex justify-between items-center">
             <span className="text-muted-foreground">Model:</span>
-            <span className="font-medium">{data.result?.model || 'GPT-4'}</span>
+            <span className="font-medium">{data.result?.model || 'Claude Sonnet'}</span>
           </div>
 
           {data.result?.tokens && (

@@ -42,12 +42,14 @@ const StoreNode = ({ id, data }: NodeProps) => {
 
           {data.result && (
             <div className="mt-3 p-2 bg-success/10 rounded text-xs text-success">
-              Vectors stored in Chroma DB
+              ✓ {data.result.chunks} vectors stored in ChromaDB
             </div>
           )}
 
           <div className="text-xs text-muted-foreground mt-2">
-            Vectors are automatically stored after embedding
+            <div>• OpenAI embeddings (1536 dim)</div>
+            <div>• Persistent storage: ./storage/chroma</div>
+            <div>• Namespace isolation enabled</div>
           </div>
         </div>
 

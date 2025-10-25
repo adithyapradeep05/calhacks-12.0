@@ -10,6 +10,10 @@ const EmbedNode = ({ id, data }: NodeProps) => {
   const { nodes, namespace, updateNodeData, updateNodeStatus, setSelectedNode } = useWorkflowStore();
 
   const handleEmbed = useCallback(async () => {
+    console.log('Embed button clicked');
+    console.log('Current namespace:', namespace);
+    console.log('Available nodes:', nodes.map(n => ({ id: n.id, type: n.data.type, status: n.data.status })));
+    
     if (!namespace) {
       alert('Please set a namespace first');
       return;
@@ -17,29 +21,54 @@ const EmbedNode = ({ id, data }: NodeProps) => {
 
     // Find upload node
     const uploadNode = nodes.find(n => n.data.type === 'upload');
+    console.log('Upload node found:', uploadNode);
+    
     if (!uploadNode?.data.result?.path) {
       alert('Please upload a document first');
       return;
     }
 
+    console.log('Starting embedding process...');
     setEmbedding(true);
     updateNodeStatus(id, 'running');
 
     try {
+      console.log('Calling embedDocument with:', {
+        path: uploadNode.data.result.path,
+        namespace,
+      });
+      
       const result = await embedDocument({
         path: uploadNode.data.result.path,
         namespace,
       });
       
+      console.log('Embedding successful:', result);
+      
       updateNodeData(id, {
-        config: { chunkSize: 512, overlap: 50 },
+        config: { chunkSize: 800, overlap: 150 },
         result: result,
         status: 'success',
       });
       updateNodeStatus(id, 'success');
-    } catch (error) {
+      
+      // Update store node to show vectors are stored
+      const storeNode = nodes.find(n => n.data.type === 'store');
+      if (storeNode) {
+        updateNodeData(storeNode.id, {
+          result: { stored: true, chunks: result.chunks },
+          status: 'success',
+        });
+        updateNodeStatus(storeNode.id, 'success');
+      }
+    } catch (error: any) {
       console.error('Embedding failed:', error);
+      const errorMessage = error.response?.data?.detail || error.message || 'Embedding failed';
+      console.error('Error details:', errorMessage);
       updateNodeStatus(id, 'error');
+      
+      // Show user-friendly error message
+      alert(`Embedding failed: ${errorMessage}`);
     } finally {
       setEmbedding(false);
     }
@@ -76,11 +105,14 @@ const EmbedNode = ({ id, data }: NodeProps) => {
         <div className="space-y-3">
           <Button
             onClick={handleEmbed}
-            disabled={embedding || !namespace}
+            disabled={embedding || !namespace || !nodes.find(n => n.data.type === 'upload')?.data.result}
             className="w-full"
             size="sm"
           >
-            {embedding ? 'Embedding...' : 'Embed Document'}
+            {embedding ? '🔄 Embedding...' : 
+             !namespace ? '⚠️ Set namespace first' :
+             !nodes.find(n => n.data.type === 'upload')?.data.result ? '⚠️ Upload document first' :
+             '✨ Embed Document'}
           </Button>
 
           {data.result && (
@@ -100,6 +132,13 @@ const EmbedNode = ({ id, data }: NodeProps) => {
               <div>Overlap: {data.config.overlap}</div>
             </div>
           )}
+
+          {/* Debug info */}
+          <div className="text-xs text-muted-foreground space-y-0.5 border-t pt-2">
+            <div>Namespace: {namespace || 'Not set'}</div>
+            <div>Upload status: {nodes.find(n => n.data.type === 'upload')?.data.status || 'No upload node'}</div>
+            <div>Upload result: {nodes.find(n => n.data.type === 'upload')?.data.result ? 'Yes' : 'No'}</div>
+          </div>
         </div>
 
         <div className="mt-3 pt-3 border-t border-border flex justify-between text-xs">

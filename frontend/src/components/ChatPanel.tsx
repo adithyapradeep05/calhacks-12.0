@@ -51,12 +51,15 @@ export const ChatPanel = ({ onToast }: { onToast: (message: string, type: 'succe
     }
 
     try {
+      console.log('Starting query:', { namespace, query: question, k });
+      
       const response = await queryRAG({
         namespace,
         query: question,
         k,
       });
 
+      console.log('Query response received:', response);
       setAnswer(response.answer);
       setContext(response.context);
 
@@ -72,7 +75,7 @@ export const ChatPanel = ({ onToast }: { onToast: (message: string, type: 'succe
       // Update LLM node
       if (llmNode) {
         updateNodeData(llmNode.id, {
-          result: { model: 'GPT-4', tokens: response.answer.length },
+          result: { model: 'Claude Sonnet', tokens: response.answer.length },
           status: 'success',
         });
         updateNodeStatus(llmNode.id, 'success');
@@ -81,7 +84,17 @@ export const ChatPanel = ({ onToast }: { onToast: (message: string, type: 'succe
       onToast('Answer generated successfully', 'success');
     } catch (error: any) {
       console.error('Query failed:', error);
-      onToast(error.response?.data?.detail || 'Query failed', 'error');
+      
+      let errorMessage = 'Query failed';
+      if (error.code === 'ECONNABORTED') {
+        errorMessage = 'Query timed out (60s). The backend might be slow or overloaded. Please try again.';
+      } else if (error.response?.data?.detail) {
+        errorMessage = error.response.data.detail;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      onToast(errorMessage, 'error');
       
       if (queryNode) updateNodeStatus(queryNode.id, 'error');
       if (llmNode) updateNodeStatus(llmNode.id, 'error');
@@ -141,7 +154,28 @@ export const ChatPanel = ({ onToast }: { onToast: (message: string, type: 'succe
   return (
     <div className="w-full h-full bg-card border-l border-border flex flex-col">
       <div className="p-4 border-b border-border">
-        <h2 className="text-lg font-semibold mb-3">Chat</h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-lg font-semibold">Chat</h2>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setAnswer('');
+              setContext([]);
+              setQuestion('');
+              setNamespace('');
+              // Reset all nodes
+              nodes.forEach(node => {
+                updateNodeData(node.id, { result: null, status: 'idle' });
+                updateNodeStatus(node.id, 'idle');
+              });
+              onToast('Workflow reset', 'success');
+            }}
+            className="text-xs"
+          >
+            🆕 New
+          </Button>
+        </div>
         <div>
           <label className="text-sm text-muted-foreground mb-1 block">Namespace</label>
           <Input
