@@ -1,0 +1,131 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    /* Dark theme by default */
+    --background: 222 20% 8%;
+    --foreground: 220 15% 92%;
+
+    --card: 222 18% 12%;
+    --card-foreground: 220 15% 92%;
+
+    --popover: 222 18% 12%;
+    --popover-foreground: 220 15% 92%;
+
+    --primary: 245 70% 65%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 222 15% 18%;
+    --secondary-foreground: 220 15% 92%;
+
+    --muted: 222 15% 16%;
+    --muted-foreground: 220 10% 65%;
+
+    --accent: 190 90% 55%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 70% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 222 15% 22%;
+    --input: 222 15% 22%;
+    --ring: 245 70% 65%;
+
+    --success: 145 70% 50%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 35 95% 60%;
+    --warning-foreground: 0 0% 100%;
+
+    --node-upload: 210 40% 20%;
+    --node-upload-border: 210 70% 55%;
+    
+    --node-embed: 280 35% 22%;
+    --node-embed-border: 280 60% 60%;
+    
+    --node-store: 145 30% 20%;
+    --node-store-border: 145 60% 50%;
+    
+    --node-query: 35 40% 22%;
+    --node-query-border: 35 85% 60%;
+    
+    --node-llm: 340 35% 22%;
+    --node-llm-border: 340 75% 60%;
+
+    --canvas-bg: 222 20% 10%;
+    --canvas-grid: 222 15% 18%;
+
+    --radius: 0.5rem;
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .light {
+    --background: 220 20% 97%;
+    --foreground: 225 15% 20%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 225 15% 20%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 225 15% 20%;
+
+    --primary: 245 60% 55%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 215 25% 90%;
+    --secondary-foreground: 225 15% 20%;
+
+    --muted: 215 25% 92%;
+    --muted-foreground: 225 10% 45%;
+
+    --accent: 190 85% 50%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 70% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 215 20% 88%;
+    --input: 215 20% 88%;
+    --ring: 245 60% 55%;
+
+    --success: 145 65% 45%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 35 90% 55%;
+    --warning-foreground: 0 0% 100%;
+
+    --node-upload: 210 100% 95%;
+    --node-upload-border: 210 60% 65%;
+    
+    --node-embed: 280 100% 95%;
+    --node-embed-border: 280 50% 65%;
+    
+    --node-store: 145 70% 92%;
+    --node-store-border: 145 50% 55%;
+    
+    --node-query: 35 100% 94%;
+    --node-query-border: 35 80% 60%;
+    
+    --node-llm: 340 90% 95%;
+    --node-llm-border: 340 70% 60%;
+
+    --canvas-bg: 220 15% 96%;
+    --canvas-grid: 220 10% 90%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
