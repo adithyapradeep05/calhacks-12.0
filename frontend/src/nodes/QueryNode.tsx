@@ -2,9 +2,10 @@ import { memo } from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
 import { Search, Settings } from 'lucide-react';
 import { useWorkflowStore } from '@/state/useWorkflowStore';
+import { NodeDeleteButton } from '@/components/NodeDeleteButton';
 
 const QueryNode = ({ id, data }: NodeProps) => {
-  const { updateNodeData, setSelectedNode } = useWorkflowStore();
+  const { updateNodeData, setSelectedNode, deleteNode } = useWorkflowStore();
 
   const k = data.config?.k || 4;
 
@@ -36,6 +37,7 @@ const QueryNode = ({ id, data }: NodeProps) => {
           }`}>
             {data.status === 'success' ? 'Retrieved' : 'Ready'}
           </div>
+          <NodeDeleteButton nodeId={id} onDelete={deleteNode} />
         </div>
 
         <div className="space-y-3">

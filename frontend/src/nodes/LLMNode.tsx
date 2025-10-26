@@ -1,10 +1,17 @@
 import { memo } from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
-import { Brain, Settings } from 'lucide-react';
+import { Brain, Settings, X } from 'lucide-react';
 import { useWorkflowStore } from '@/state/useWorkflowStore';
 
 const LLMNode = ({ id, data }: NodeProps) => {
-  const { setSelectedNode } = useWorkflowStore();
+  const { setSelectedNode, deleteNode } = useWorkflowStore();
+
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (confirm('Delete this node?')) {
+      deleteNode(id);
+    }
+  };
 
   const statusColors = {
     idle: 'border-node-llmBorder',
@@ -28,6 +35,13 @@ const LLMNode = ({ id, data }: NodeProps) => {
           }`}>
             {data.status === 'success' ? 'Responded' : 'Ready'}
           </div>
+          <button
+            onClick={handleDelete}
+            className="ml-1 p-0.5 rounded hover:bg-destructive/20 text-muted-foreground hover:text-destructive transition-colors"
+            title="Delete node"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
         <div className="space-y-2 text-sm">
