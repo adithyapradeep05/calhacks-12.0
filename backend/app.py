@@ -3,7 +3,7 @@ import json
 import hashlib
 import time
 import math
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, cast
 from pathlib import Path
 import re
 
@@ -14,16 +14,11 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import chromadb
 from chromadb.config import Settings
-import google.generativeai as genai
-from google.generativeai.types import HarmCategory, HarmBlockThreshold
 import anthropic
 import openai
 import PyPDF2
 
-# Environment variables
-EMBED_PROVIDER = os.getenv("EMBED_PROVIDER", "OPENAI")  # Default to OpenAI
-GEMINI_EMBED_MODEL = os.getenv("GEMINI_EMBED_MODEL", "models/text-embedding-004")
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+# Environment variables (OpenAI only)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_EMBED_MODEL = os.getenv("OPENAI_EMBED_MODEL", "text-embedding-3-small")
 CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "400"))  # Smaller chunks for better retrieval
@@ -31,17 +26,10 @@ CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "100"))  # More overlap for conte
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-3-sonnet-20240229")
 
-# Initialize Gemini (only if using Gemini)
-if EMBED_PROVIDER == "GEMINI":
-    if not GOOGLE_API_KEY:
-        raise ValueError("GOOGLE_API_KEY is required when EMBED_PROVIDER=GEMINI")
-    genai.configure(api_key=GOOGLE_API_KEY)
-
-# Initialize OpenAI (only if using OpenAI)
-if EMBED_PROVIDER == "OPENAI":
-    if not OPENAI_API_KEY:
-        raise ValueError("OPENAI_API_KEY is required when EMBED_PROVIDER=OPENAI")
-    openai.api_key = OPENAI_API_KEY
+# Initialize OpenAI
+if not OPENAI_API_KEY:
+    raise ValueError("OPENAI_API_KEY is required")
+openai.api_key = OPENAI_API_KEY
 
 # Initialize Claude
 claude_client = None
@@ -50,7 +38,7 @@ if ANTHROPIC_API_KEY:
 
 # Initialize ChromaDB
 chroma_client = chromadb.PersistentClient(path="./storage/chroma")
-collection = chroma_client.get_or_create_collection("ragflow")
+collection = chroma_client.get_or_create_collection("vespora")
 
 # Cache directory
 CACHE_DIR = Path("./storage/cache")
@@ -76,7 +64,7 @@ class UploadResponse(BaseModel):
     namespace: str
 
 # Initialize FastAPI app
-app = FastAPI(title="RAGFlow Backend", version="1.0.0")
+app = FastAPI(title="Vespora Backend", version="1.0.0")
 
 # CORS middleware
 app.add_middleware(
@@ -113,6 +101,9 @@ def load_cache():
             print(f"Loaded {len(embedding_cache)} cached embeddings")
         except Exception as e:
             print(f"Error loading cache: {e}")
+
+# Load cache at import/startup so it's ready for use
+load_cache()
 
 def cache_get(model: str, text: str) -> Optional[List[float]]:
     """Get embedding from cache."""
@@ -251,54 +242,56 @@ def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, chunk_overlap: int = CHU
     return chunks
 
 def embed_texts(texts: List[str], model: str = None) -> List[List[float]]:
-    """Embed texts using configured provider (Gemini or OpenAI) with caching."""
+    """Embed texts using OpenAI with caching and batching."""
     if model is None:
-        if EMBED_PROVIDER == "OPENAI":
-            model = OPENAI_EMBED_MODEL
-        else:
-            model = GEMINI_EMBED_MODEL
+        model = OPENAI_EMBED_MODEL
     
-    embeddings = []
-    batch_size = 64 if EMBED_PROVIDER == "GEMINI" else 100  # OpenAI allows larger batches
+    embeddings: List[List[float]] = []
+    batch_size = 256  # OpenAI supports larger batches
     
     for i in range(0, len(texts), batch_size):
         batch_texts = texts[i:i + batch_size]
-        batch_embeddings = []
+        batch_embeddings: List[Optional[List[float]]] = []
         
-        for text in batch_texts:
-            # Check cache first
+        # First, try to satisfy from cache
+        to_compute: List[Tuple[int, str]] = []  # (index_in_batch, text)
+        for idx, text in enumerate(batch_texts):
             cached = cache_get(model, text)
             if cached:
                 batch_embeddings.append(cached)
             else:
-                try:
-                    if EMBED_PROVIDER == "OPENAI":
-                        # Get embedding from OpenAI
-                        response = openai.embeddings.create(
-                            model=model,
-                            input=text
-                        )
-                        embedding = response.data[0].embedding
-                    else:
-                        # Get embedding from Gemini
-                        result = genai.embed_content(
-                            model=model,
-                            content=text,
-                            task_type="retrieval_document"
-                        )
-                        embedding = result['embedding']
-                    
-                    batch_embeddings.append(embedding)
-                    
-                    # Cache the embedding
-                    cache_put(model, text, embedding)
-                except Exception as e:
-                    print(f"Error embedding text with {EMBED_PROVIDER}: {e}")
-                    # Use zero vector as fallback (dimension depends on model)
-                    fallback_dim = 1536 if EMBED_PROVIDER == "OPENAI" else 768
-                    batch_embeddings.append([0.0] * fallback_dim)
+                batch_embeddings.append(None)  # placeholder
+                to_compute.append((idx, text))
         
-        embeddings.extend(batch_embeddings)
+        if to_compute:
+            # Compute embeddings in a single batched request preserving order
+            ordered_texts = [t for _, t in to_compute]
+            max_retries = 3
+            vectors: List[List[float]] = []
+            for attempt in range(max_retries):
+                try:
+                    response = openai.embeddings.create(
+                        model=model,
+                        input=ordered_texts
+                    )
+                    vectors = [d.embedding for d in response.data]
+                    break
+                except Exception as e:
+                    if attempt == max_retries - 1:
+                        print(f"ERROR: OpenAI embed batch failed after {max_retries} attempts: {e}")
+                        # Fallback zero vectors if completely failed
+                        vectors = [[0.0] * 1536 for _ in ordered_texts]
+                    else:
+                        sleep_s = 2 ** attempt
+                        print(f"WARN: OpenAI embed batch failed (attempt {attempt+1}/{max_retries}): {e}. Retrying in {sleep_s}s...")
+                        time.sleep(sleep_s)
+            # Place results back and cache
+            for (idx, text), vec in zip(to_compute, vectors):
+                batch_embeddings[idx] = vec
+                cache_put(model, text, vec)
+        
+        # All entries should be resolved now
+        embeddings.extend(cast(List[List[float]], batch_embeddings))
     
     return embeddings
 
@@ -404,21 +397,24 @@ async def embed_document(request: EmbedRequest):
             
             # Get embeddings
             embeddings = embed_texts(unique_chunks)
-            embedding_dim = len(embeddings[0]) if embeddings else (1536 if EMBED_PROVIDER == "OPENAI" else 768)
+            embedding_dim = len(embeddings[0]) if embeddings else 1536
             
-            # Store in ChromaDB
-            ids = [f"{request.namespace}_{i}" for i in range(len(unique_chunks))]
+            # Store in ChromaDB with stable, hash-based IDs per namespace (idempotent)
+            ids = [f"{request.namespace}:{meta['hash']}" for meta in chunk_metadata]
             print(f"DEBUG: Storing with IDs: {ids[:3]}...")  # Show first 3 IDs
-            
-            collection.add(
-                documents=unique_chunks,
-                embeddings=embeddings,
-                metadatas=chunk_metadata,
-                ids=ids
-            )
+            try:
+                collection.add(
+                    documents=unique_chunks,
+                    embeddings=embeddings,
+                    metadatas=chunk_metadata,
+                    ids=ids
+                )
+            except Exception as e:
+                # If duplicates exist, skip adding existing
+                print(f"WARN: Chroma add encountered an error (possibly duplicate IDs): {e}")
             print(f"DEBUG: Successfully stored {chunks_added} chunks in ChromaDB")
         else:
-            embedding_dim = 1536 if EMBED_PROVIDER == "OPENAI" else 768
+            embedding_dim = 1536
         
         duration_ms = int((time.time() - start_time) * 1000)
         log_request("POST /embed", duration_ms, request.namespace, 
@@ -567,7 +563,7 @@ async def query_documents(request: QueryRequest):
                 
                 context_text = "\n\n".join(context_snippets)
                 
-                # Use the rock-solid RAGFlow prompt template
+                # Use the rock-solid Vespora prompt template
                 system_prompt = """You are a **grounded Q&A assistant** answering only from the retrieved CONTEXT.  
 **Do not fabricate** facts. If the CONTEXT is missing or irrelevant, say:  
 > "I don't know based on the provided documents."
