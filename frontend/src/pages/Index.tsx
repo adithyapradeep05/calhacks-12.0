@@ -19,7 +19,7 @@ const Index = () => {
           </ReactFlowProvider>
         </div>
         
-        <div className="w-[35%] overflow-hidden">
+        <div className="w-[35%] min-w-[400px] overflow-hidden">
           <ChatPanel onToast={addToast} />
         </div>
       </div>

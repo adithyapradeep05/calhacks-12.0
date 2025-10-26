@@ -4,12 +4,13 @@ import { Upload, FileText, Settings } from 'lucide-react';
 import { useWorkflowStore } from '@/state/useWorkflowStore';
 import { uploadFile } from '@/lib/api';
 import { Button } from '@/components/ui/button';
+import { NodeDeleteButton } from '@/components/NodeDeleteButton';
 
 const UploadNode = ({ id, data }: NodeProps) => {
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
-  const { updateNodeData, updateNodeStatus, setSelectedNode } = useWorkflowStore();
+  const { updateNodeData, updateNodeStatus, setSelectedNode, deleteNode } = useWorkflowStore();
 
   const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
@@ -116,6 +117,7 @@ const UploadNode = ({ id, data }: NodeProps) => {
              data.status === 'running' ? 'Uploading...' :
              data.status === 'error' ? 'Error' : 'Idle'}
           </div>
+          <NodeDeleteButton nodeId={id} onDelete={deleteNode} />
         </div>
 
         <div className="space-y-3">

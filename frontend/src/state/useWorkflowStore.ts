@@ -30,6 +30,8 @@ interface WorkflowState {
   resetWorkflow: () => void;
   saveWorkflow: () => void;
   loadWorkflow: (data: any) => void;
+  addNode: (nodeType: string, position: { x: number; y: number }) => void;
+  deleteNode: (nodeId: string) => void;
 }
 
 const STORAGE_KEY = 'ragflow-workflow';
@@ -201,6 +203,57 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       nodes: data.nodes || defaultNodes,
       edges: data.edges || defaultEdges,
       namespace: data.namespace || '',
+    });
+    get().saveWorkflow();
+  },
+
+  addNode: (nodeType, position) => {
+    const newNodeId = `node-${Date.now()}`;
+    const nodeConfig: Record<string, { label: string; type: string }> = {
+      uploadNode: { label: 'Upload Docs', type: 'upload' },
+      embedNode: { label: 'Embed', type: 'embed' },
+      storeNode: { label: 'Store (Chroma)', type: 'store' },
+      queryNode: { label: 'Query', type: 'query' },
+      llmNode: { label: 'LLM Response', type: 'llm' },
+    };
+
+    const config = nodeConfig[nodeType];
+    if (!config) return;
+
+    const newNode: Node<NodeData> = {
+      id: newNodeId,
+      type: nodeType,
+      position,
+      data: {
+        ...config,
+        status: 'idle',
+      },
+    };
+
+    set({
+      nodes: [...get().nodes, newNode],
+    });
+    get().saveWorkflow();
+  },
+
+  deleteNode: (nodeId) => {
+    const { nodes, edges } = get();
+    
+    // Remove the node
+    const updatedNodes = nodes.filter(n => n.id !== nodeId);
+    
+    // Remove all edges connected to this node
+    const updatedEdges = edges.filter(
+      e => e.source !== nodeId && e.target !== nodeId
+    );
+
+    // Clear selection if deleted node was selected
+    const clearSelection = get().selectedNode === nodeId;
+
+    set({
+      nodes: updatedNodes,
+      edges: updatedEdges,
+      selectedNode: clearSelection ? null : get().selectedNode,
     });
     get().saveWorkflow();
   },

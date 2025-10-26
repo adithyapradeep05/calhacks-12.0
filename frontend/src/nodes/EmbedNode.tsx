@@ -4,10 +4,11 @@ import { Sparkles, Settings } from 'lucide-react';
 import { useWorkflowStore } from '@/state/useWorkflowStore';
 import { embedDocument } from '@/lib/api';
 import { Button } from '@/components/ui/button';
+import { NodeDeleteButton } from '@/components/NodeDeleteButton';
 
 const EmbedNode = ({ id, data }: NodeProps) => {
   const [embedding, setEmbedding] = useState(false);
-  const { nodes, namespace, updateNodeData, updateNodeStatus, setSelectedNode } = useWorkflowStore();
+  const { nodes, namespace, updateNodeData, updateNodeStatus, setSelectedNode, deleteNode } = useWorkflowStore();
 
   const handleEmbed = useCallback(async () => {
     console.log('Embed button clicked');
@@ -100,6 +101,7 @@ const EmbedNode = ({ id, data }: NodeProps) => {
              data.status === 'running' ? 'Embedding...' :
              data.status === 'error' ? 'Error' : 'Idle'}
           </div>
+          <NodeDeleteButton nodeId={id} onDelete={deleteNode} />
         </div>
 
         <div className="space-y-3">
