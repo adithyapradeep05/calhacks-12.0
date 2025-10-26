@@ -107,7 +107,7 @@ export const Canvas = () => {
     addNode(nodeType, position);
   }, [addNode, screenToFlowPosition]);
 
-  // Resizable shelf state
+  // Resizable BlockShelf state
   const [shelfWidth, setShelfWidth] = useState<number>(() => {
     const stored = localStorage.getItem('shelfWidth');
     const parsed = stored ? parseInt(stored, 10) : 280;
@@ -166,40 +166,40 @@ export const Canvas = () => {
       
       <div ref={reactFlowWrapper} className="flex-1">
         <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          onNodeClick={onNodeClick}
-          onPaneContextMenu={onPaneContextMenu}
-          onDragOver={onDragOver}
-          onDrop={onDrop}
-          nodeTypes={nodeTypes}
-          fitView
-          className="bg-canvas-bg"
-        >
-          <Background 
-            variant={BackgroundVariant.Dots} 
-            gap={16} 
-            size={2}
-            color="hsl(var(--canvas-grid))"
-          />
-          <Controls className="bg-card border-border" />
-          <MiniMap 
-            className="bg-card border-border"
-            nodeColor={(node) => {
-              const colors: Record<string, string> = {
-                uploadNode: 'hsl(var(--node-upload-border))',
-                embedNode: 'hsl(var(--node-embed-border))',
-                storeNode: 'hsl(var(--node-store-border))',
-                queryNode: 'hsl(var(--node-query-border))',
-                llmNode: 'hsl(var(--node-llm-border))',
-              };
-              return colors[node.type || ''] || 'hsl(var(--primary))';
-            }}
-          />
-        </ReactFlow>
+        nodes={nodes}
+        edges={edges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        onConnect={onConnect}
+        onNodeClick={onNodeClick}
+        onPaneContextMenu={onPaneContextMenu}
+        onDragOver={onDragOver}
+        onDrop={onDrop}
+        nodeTypes={nodeTypes}
+        fitView
+        className="bg-canvas-bg"
+      >
+        <Background 
+          variant={BackgroundVariant.Dots} 
+          gap={16} 
+          size={2}
+          color="hsl(var(--canvas-grid))"
+        />
+        <Controls className="bg-card border-border" />
+        <MiniMap 
+          className="bg-card border-border"
+          nodeColor={(node) => {
+            const colors: Record<string, string> = {
+              uploadNode: 'hsl(var(--node-upload-border))',
+              embedNode: 'hsl(var(--node-embed-border))',
+              storeNode: 'hsl(var(--node-store-border))',
+              queryNode: 'hsl(var(--node-query-border))',
+              llmNode: 'hsl(var(--node-llm-border))',
+            };
+            return colors[node.type || ''] || 'hsl(var(--primary))';
+          }}
+        />
+      </ReactFlow>
       </div>
     </div>
   );

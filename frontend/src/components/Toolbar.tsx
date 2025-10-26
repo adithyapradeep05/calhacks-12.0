@@ -70,15 +70,16 @@ export const Toolbar = ({ onToast }: { onToast: (message: string, type: 'success
           {logoOk ? (
             <img
               src="/logo.png"
-              alt="Velora logo"
+              alt="Logo"
               className="w-8 h-8 object-contain"
               onError={() => setLogoOk(false)}
+              draggable={false}
             />
           ) : (
-            <span className="text-primary font-bold text-sm">VL</span>
+            <span className="text-primary font-bold text-sm">RF</span>
           )}
         </div>
-        <h1 className="text-lg font-bold">Velora</h1>
+        <h1 className="text-lg font-bold">RAGFlow</h1>
       </div>
 
       <Button variant="outline" size="sm" onClick={handleNew}>
