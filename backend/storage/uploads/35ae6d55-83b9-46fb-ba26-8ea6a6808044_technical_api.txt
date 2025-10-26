@@ -1,0 +1,1 @@
+API documentation for REST endpoints. Implementation details and architecture specifications.

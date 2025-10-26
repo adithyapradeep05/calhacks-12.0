@@ -1,0 +1,58 @@
+[
+  {
+    "classifier": "keyword",
+    "accuracy": 0.95,
+    "avg_confidence": 0.8899571959880342,
+    "avg_processing_time": 0.0008625149726867676,
+    "category_results": {
+      "legal": {
+        "correct": 4,
+        "total": 4
+      },
+      "technical": {
+        "correct": 4,
+        "total": 4
+      },
+      "financial": {
+        "correct": 4,
+        "total": 4
+      },
+      "hr": {
+        "correct": 3,
+        "total": 4
+      },
+      "general": {
+        "correct": 4,
+        "total": 4
+      }
+    }
+  },
+  {
+    "classifier": "hybrid",
+    "accuracy": 0.95,
+    "avg_confidence": 0.7808656769327472,
+    "avg_processing_time": 0.0017722845077514648,
+    "category_results": {
+      "legal": {
+        "correct": 4,
+        "total": 4
+      },
+      "technical": {
+        "correct": 4,
+        "total": 4
+      },
+      "financial": {
+        "correct": 4,
+        "total": 4
+      },
+      "hr": {
+        "correct": 3,
+        "total": 4
+      },
+      "general": {
+        "correct": 4,
+        "total": 4
+      }
+    }
+  }
+]

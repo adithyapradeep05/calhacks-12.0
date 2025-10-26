@@ -1,0 +1,86 @@
+[
+  {
+    "classifier_name": "LLM",
+    "accuracy": 0.2,
+    "avg_confidence": 0.0,
+    "avg_processing_time": 0.16677868366241455,
+    "category_results": {
+      "legal": {
+        "correct": 0,
+        "total": 4
+      },
+      "technical": {
+        "correct": 0,
+        "total": 4
+      },
+      "financial": {
+        "correct": 0,
+        "total": 4
+      },
+      "hr": {
+        "correct": 0,
+        "total": 4
+      },
+      "general": {
+        "correct": 4,
+        "total": 4
+      }
+    }
+  },
+  {
+    "classifier_name": "Keyword",
+    "accuracy": 0.95,
+    "avg_confidence": 0.8899571959880342,
+    "avg_processing_time": 0.0013514995574951173,
+    "category_results": {
+      "legal": {
+        "correct": 4,
+        "total": 4
+      },
+      "technical": {
+        "correct": 4,
+        "total": 4
+      },
+      "financial": {
+        "correct": 4,
+        "total": 4
+      },
+      "hr": {
+        "correct": 3,
+        "total": 4
+      },
+      "general": {
+        "correct": 4,
+        "total": 4
+      }
+    }
+  },
+  {
+    "classifier_name": "Hybrid",
+    "accuracy": 0.95,
+    "avg_confidence": 0.7808656769327472,
+    "avg_processing_time": 0.16955413818359374,
+    "category_results": {
+      "legal": {
+        "correct": 4,
+        "total": 4
+      },
+      "technical": {
+        "correct": 4,
+        "total": 4
+      },
+      "financial": {
+        "correct": 4,
+        "total": 4
+      },
+      "hr": {
+        "correct": 3,
+        "total": 4
+      },
+      "general": {
+        "correct": 4,
+        "total": 4
+      }
+    }
+  }
+]

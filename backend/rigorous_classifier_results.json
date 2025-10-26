@@ -1,0 +1,89 @@
+[
+  {
+    "classifier": "llm",
+    "accuracy": 0.95,
+    "avg_confidence": 0.9295,
+    "avg_processing_time": 2.070378279685974,
+    "errors": 0,
+    "category_results": {
+      "legal": {
+        "correct": 4,
+        "total": 4
+      },
+      "technical": {
+        "correct": 4,
+        "total": 4
+      },
+      "financial": {
+        "correct": 4,
+        "total": 4
+      },
+      "hr": {
+        "correct": 4,
+        "total": 4
+      },
+      "general": {
+        "correct": 3,
+        "total": 4
+      }
+    }
+  },
+  {
+    "classifier": "keyword",
+    "accuracy": 0.95,
+    "avg_confidence": 0.8899571959880342,
+    "avg_processing_time": 0.0013646483421325684,
+    "errors": 0,
+    "category_results": {
+      "legal": {
+        "correct": 4,
+        "total": 4
+      },
+      "technical": {
+        "correct": 4,
+        "total": 4
+      },
+      "financial": {
+        "correct": 4,
+        "total": 4
+      },
+      "hr": {
+        "correct": 3,
+        "total": 4
+      },
+      "general": {
+        "correct": 4,
+        "total": 4
+      }
+    }
+  },
+  {
+    "classifier": "hybrid",
+    "accuracy": 0.95,
+    "avg_confidence": 0.9172019736112249,
+    "avg_processing_time": 2.038729965686798,
+    "errors": 0,
+    "category_results": {
+      "legal": {
+        "correct": 4,
+        "total": 4
+      },
+      "technical": {
+        "correct": 4,
+        "total": 4
+      },
+      "financial": {
+        "correct": 4,
+        "total": 4
+      },
+      "hr": {
+        "correct": 4,
+        "total": 4
+      },
+      "general": {
+        "correct": 3,
+        "total": 4
+      }
+    }
+  }
+]
