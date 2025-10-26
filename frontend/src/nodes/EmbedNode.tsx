@@ -20,12 +20,12 @@ const EmbedNode = ({ id, data }: NodeProps) => {
       return;
     }
 
-    // Find upload node
-    const uploadNode = nodes.find(n => n.data.type === 'upload');
-    console.log('Upload node found:', uploadNode);
+    // Find all upload nodes
+    const uploadNodes = nodes.filter(n => n.data.type === 'upload' && n.data.result?.path);
+    console.log('Upload nodes found:', uploadNodes.length);
     
-    if (!uploadNode?.data.result?.path) {
-      alert('Please upload a document first');
+    if (uploadNodes.length === 0) {
+      alert('Please upload documents first');
       return;
     }
 
@@ -34,21 +34,28 @@ const EmbedNode = ({ id, data }: NodeProps) => {
     updateNodeStatus(id, 'running');
 
     try {
-      console.log('Calling embedDocument with:', {
-        path: uploadNode.data.result.path,
-        namespace,
-      });
+      // Process all upload nodes
+      let totalChunks = 0;
+      for (const uploadNode of uploadNodes) {
+        console.log('Calling embedDocument with:', {
+          path: uploadNode.data.result.path,
+          namespace,
+        });
+        
+        const result = await embedDocument({
+          path: uploadNode.data.result.path,
+          namespace,
+        });
+        
+        console.log('Embedding successful for:', uploadNode.data.result.filename, result);
+        totalChunks += result.chunks || 0;
+      }
       
-      const result = await embedDocument({
-        path: uploadNode.data.result.path,
-        namespace,
-      });
-      
-      console.log('Embedding successful:', result);
+      console.log('All embeddings successful. Total chunks:', totalChunks);
       
       updateNodeData(id, {
         config: { chunkSize: 800, overlap: 150 },
-        result: result,
+        result: { chunks: totalChunks, namespace },
         status: 'success',
       });
       updateNodeStatus(id, 'success');
@@ -57,7 +64,7 @@ const EmbedNode = ({ id, data }: NodeProps) => {
       const storeNode = nodes.find(n => n.data.type === 'store');
       if (storeNode) {
         updateNodeData(storeNode.id, {
-          result: { stored: true, chunks: result.chunks },
+          result: { stored: true, chunks: totalChunks },
           status: 'success',
         });
         updateNodeStatus(storeNode.id, 'success');
