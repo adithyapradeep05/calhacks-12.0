@@ -38,6 +38,8 @@ export const ChatPanel = ({ onToast }: { onToast: (message: string, type: 'succe
     setLoading(true);
     setAnswer('');
     setContext([]);
+    // Clear input immediately after submitting
+    setQuestion('');
 
     // Update query node status
     if (queryNode) {
@@ -144,7 +146,7 @@ export const ChatPanel = ({ onToast }: { onToast: (message: string, type: 'succe
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `ragflow-chat-${Date.now()}.json`;
+    a.download = `vespora-chat-${Date.now()}.json`;
     a.click();
     URL.revokeObjectURL(url);
 
