@@ -1,8 +1,9 @@
-import { useCallback, useEffect } from 'react';
-import ReactFlow, { Background, Controls, MiniMap, BackgroundVariant, useReactFlow } from 'reactflow';
+import { useCallback, useEffect, useRef } from 'react';
+import ReactFlow, { Background, Controls, MiniMap, BackgroundVariant, useReactFlow, ReactFlowProvider } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { useWorkflowStore } from '@/state/useWorkflowStore';
 import { nodeTypes } from '@/nodes';
+import { BlockShelf } from './BlockShelf';
 
 export const Canvas = () => {
   const {
@@ -14,9 +15,12 @@ export const Canvas = () => {
     saveWorkflow,
     selectedNode,
     setSelectedNode,
+    addNode,
+    deleteNode,
   } = useWorkflowStore();
 
-  const { fitView, zoomIn, zoomOut, setViewport } = useReactFlow();
+  const { fitView, zoomIn, zoomOut, setViewport, screenToFlowPosition } = useReactFlow();
+  const reactFlowWrapper = useRef<HTMLDivElement>(null);
 
   const onNodeClick = useCallback((event: React.MouseEvent, node: any) => {
     setSelectedNode(node.id);
@@ -41,10 +45,9 @@ export const Canvas = () => {
 
       // Delete: Delete selected node/edge
       if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (selectedNode && document.activeElement?.tagName !== 'INPUT') {
+        if (selectedNode && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
           e.preventDefault();
-          // Handle delete (can be extended to actually remove nodes)
-          console.log('Delete node:', selectedNode);
+          deleteNode(selectedNode);
         }
       }
 
@@ -69,17 +72,56 @@ export const Canvas = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedNode, saveWorkflow, fitView, zoomIn, zoomOut]);
+  }, [selectedNode, saveWorkflow, fitView, zoomIn, zoomOut, deleteNode]);
+
+  const onPaneContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+  }, []);
+
+  const onDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  }, []);
+
+  const onDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      const nodeType = e.dataTransfer.getData('application/reactflow');
+      if (!nodeType) return;
+
+      const position = screenToFlowPosition({
+        x: e.clientX,
+        y: e.clientY,
+      });
+
+      addNode(nodeType, position);
+    },
+    [addNode, screenToFlowPosition]
+  );
+
+  const handleAddNode = useCallback((nodeType: string) => {
+    const viewport = { x: 0, y: 0, zoom: 1 };
+    const centerX = window.innerWidth / 2;
+    const centerY = window.innerHeight / 2;
+    const position = screenToFlowPosition({ x: centerX, y: centerY });
+    addNode(nodeType, position);
+  }, [addNode, screenToFlowPosition]);
 
   return (
-    <div className="w-full h-full bg-canvas-bg">
-      <ReactFlow
+    <div className="flex w-full h-full bg-canvas-bg">
+      <BlockShelf onAddNode={handleAddNode} />
+      
+      <div ref={reactFlowWrapper} className="flex-1">
+        <ReactFlow
         nodes={nodes}
         edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onNodeClick={onNodeClick}
+        onPaneContextMenu={onPaneContextMenu}
+        onDragOver={onDragOver}
+        onDrop={onDrop}
         nodeTypes={nodeTypes}
         fitView
         className="bg-canvas-bg"
@@ -105,6 +147,7 @@ export const Canvas = () => {
           }}
         />
       </ReactFlow>
+      </div>
     </div>
   );
 };

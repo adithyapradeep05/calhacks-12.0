@@ -2,9 +2,10 @@ import { memo } from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
 import { Database, Settings } from 'lucide-react';
 import { useWorkflowStore } from '@/state/useWorkflowStore';
+import { NodeDeleteButton } from '@/components/NodeDeleteButton';
 
 const StoreNode = ({ id, data }: NodeProps) => {
-  const { namespace, setSelectedNode } = useWorkflowStore();
+  const { namespace, setSelectedNode, deleteNode } = useWorkflowStore();
 
   const statusColors = {
     idle: 'border-node-storeBorder',
@@ -25,6 +26,7 @@ const StoreNode = ({ id, data }: NodeProps) => {
           <div className="ml-auto px-2 py-0.5 rounded text-xs font-medium bg-muted text-muted-foreground">
             Display
           </div>
+          <NodeDeleteButton nodeId={id} onDelete={deleteNode} />
         </div>
 
         <div className="space-y-2 text-sm">
