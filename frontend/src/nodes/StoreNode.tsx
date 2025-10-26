@@ -1,11 +1,11 @@
 import { memo } from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
-import { Database, Settings } from 'lucide-react';
+import { Database } from 'lucide-react';
 import { useWorkflowStore } from '@/state/useWorkflowStore';
 import { NodeDeleteButton } from '@/components/NodeDeleteButton';
 
 const StoreNode = ({ id, data }: NodeProps) => {
-  const { namespace, setSelectedNode, deleteNode } = useWorkflowStore();
+  const { namespace, deleteNode } = useWorkflowStore();
 
   const statusColors = {
     idle: 'border-node-storeBorder',
@@ -44,26 +44,18 @@ const StoreNode = ({ id, data }: NodeProps) => {
 
           {data.result && (
             <div className="mt-3 p-2 bg-success/10 rounded text-xs text-success">
-              ✓ {data.result.chunks} vectors stored in ChromaDB
+              {data.result.chunks} vectors stored in ChromaDB
             </div>
           )}
 
           <div className="text-xs text-muted-foreground mt-2">
-            <div>• OpenAI embeddings (1536 dim)</div>
-            <div>• Persistent storage: ./storage/chroma</div>
-            <div>• Namespace isolation enabled</div>
+            <div>- OpenAI embeddings (1536 dim)</div>
+            <div>- Persistent storage: ./storage/chroma</div>
+            <div>- Namespace isolation enabled</div>
           </div>
         </div>
 
-        <div className="mt-3 pt-3 border-t border-border flex justify-between text-xs">
-          <button
-            onClick={() => setSelectedNode(id)}
-            className="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <Settings className="w-3 h-3" />
-            Settings
-          </button>
-        </div>
+        
       </div>
 
       <Handle type="source" position={Position.Bottom} className="w-3 h-3 !bg-node-storeBorder" />

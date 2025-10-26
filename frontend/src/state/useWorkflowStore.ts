@@ -137,7 +137,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       const targetType = targetNode.data.type;
       
       if (!validConnections[sourceType]?.includes(targetType)) {
-        console.warn(`Invalid connection: ${sourceType} → ${targetType}`);
+        console.warn(`Invalid connection: ${sourceType} -> ${targetType}`);
         return;
       }
     }

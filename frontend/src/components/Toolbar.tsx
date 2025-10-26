@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { File, Save, Play, Download, Moon, Sun, PlayCircle } from 'lucide-react';
 import { useWorkflowStore } from '@/state/useWorkflowStore';
 import { useTheme } from '@/hooks/useTheme';
@@ -5,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
 export const Toolbar = ({ onToast }: { onToast: (message: string, type: 'success' | 'error' | 'info') => void }) => {
+  const [logoOk, setLogoOk] = useState(true);
   const { namespace, setNamespace, resetWorkflow, saveWorkflow, nodes, selectedNode } = useWorkflowStore();
   const { theme, toggleTheme } = useTheme();
 
@@ -64,10 +66,19 @@ export const Toolbar = ({ onToast }: { onToast: (message: string, type: 'success
   return (
     <div className="bg-card border-b border-border p-3 flex items-center gap-3">
       <div className="flex items-center gap-2 mr-4">
-        <div className="w-8 h-8 bg-primary rounded flex items-center justify-center">
-          <span className="text-primary-foreground font-bold text-sm">RF</span>
+        <div className="w-8 h-8 rounded bg-primary/10 flex items-center justify-center overflow-hidden">
+          {logoOk ? (
+            <img
+              src="/logo.png"
+              alt="Velora logo"
+              className="w-8 h-8 object-contain"
+              onError={() => setLogoOk(false)}
+            />
+          ) : (
+            <span className="text-primary font-bold text-sm">VL</span>
+          )}
         </div>
-        <h1 className="text-lg font-bold">RAGFlow</h1>
+        <h1 className="text-lg font-bold">Velora</h1>
       </div>
 
       <Button variant="outline" size="sm" onClick={handleNew}>

@@ -1,10 +1,10 @@
 import { memo } from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
-import { Brain, Settings, X } from 'lucide-react';
+import { Brain, X } from 'lucide-react';
 import { useWorkflowStore } from '@/state/useWorkflowStore';
 
 const LLMNode = ({ id, data }: NodeProps) => {
-  const { setSelectedNode, deleteNode } = useWorkflowStore();
+  const { deleteNode } = useWorkflowStore();
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -59,7 +59,7 @@ const LLMNode = ({ id, data }: NodeProps) => {
 
           {data.status === 'success' && (
             <div className="mt-3 p-2 bg-success/10 rounded text-xs text-success">
-              ✓ Answer generated successfully
+              Answer generated successfully
             </div>
           )}
 
@@ -68,15 +68,7 @@ const LLMNode = ({ id, data }: NodeProps) => {
           </div>
         </div>
 
-        <div className="mt-3 pt-3 border-t border-border flex justify-between text-xs">
-          <button
-            onClick={() => setSelectedNode(id)}
-            className="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <Settings className="w-3 h-3" />
-            Settings
-          </button>
-        </div>
+        
       </div>
     </div>
   );

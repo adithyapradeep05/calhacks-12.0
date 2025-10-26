@@ -75,7 +75,7 @@ export const BlockShelf = ({ onAddNode }: BlockShelfProps) => {
         <div className="flex items-center justify-between">
           <h3 className="font-semibold text-sm">Node Blocks</h3>
           <span className="text-xs text-muted-foreground">
-            {isExpanded ? '▼' : '▶'}
+            {isExpanded ? 'v' : '>'}
           </span>
         </div>
       </div>
@@ -112,7 +112,7 @@ export const BlockShelf = ({ onAddNode }: BlockShelfProps) => {
       {/* Info Section */}
       {isExpanded && (
         <div className="p-3 border-t border-border text-xs text-muted-foreground">
-          <p className="mb-1">💡 Drag blocks onto canvas</p>
+          <p className="mb-1">Tip: Drag blocks onto canvas</p>
           <p>or click to add at center</p>
         </div>
       )}

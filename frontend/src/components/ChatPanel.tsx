@@ -175,7 +175,7 @@ export const ChatPanel = ({ onToast }: { onToast: (message: string, type: 'succe
             }}
             className="text-xs"
           >
-            🆕 New
+            New
           </Button>
         </div>
         <div>

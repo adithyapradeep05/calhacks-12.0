@@ -1,6 +1,6 @@
 import { memo, useState, useCallback } from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
-import { Sparkles, Settings } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 import { useWorkflowStore } from '@/state/useWorkflowStore';
 import { embedDocument } from '@/lib/api';
 import { Button } from '@/components/ui/button';
@@ -8,7 +8,7 @@ import { NodeDeleteButton } from '@/components/NodeDeleteButton';
 
 const EmbedNode = ({ id, data }: NodeProps) => {
   const [embedding, setEmbedding] = useState(false);
-  const { nodes, namespace, updateNodeData, updateNodeStatus, setSelectedNode, deleteNode } = useWorkflowStore();
+  const { nodes, namespace, updateNodeData, updateNodeStatus, deleteNode } = useWorkflowStore();
 
   const handleEmbed = useCallback(async () => {
     console.log('Embed button clicked');
@@ -118,16 +118,16 @@ const EmbedNode = ({ id, data }: NodeProps) => {
             className="w-full"
             size="sm"
           >
-            {embedding ? '🔄 Embedding...' : 
-             !namespace ? '⚠️ Set namespace first' :
-             !nodes.find(n => n.data.type === 'upload')?.data.result ? '⚠️ Upload document first' :
-             '✨ Embed Document'}
+            {embedding ? 'Embedding...' : 
+             !namespace ? 'Set namespace first' :
+             !nodes.find(n => n.data.type === 'upload')?.data.result ? 'Upload document first' :
+             'Embed Document'}
           </Button>
 
           {data.result && (
             <div className="text-xs space-y-1">
               <div className="text-success font-medium">
-                ✓ Embedded {data.result.chunks} chunks
+                Embedded {data.result.chunks} chunks
               </div>
               <div className="text-muted-foreground">
                 Namespace: {data.result.namespace}
@@ -150,15 +150,7 @@ const EmbedNode = ({ id, data }: NodeProps) => {
           </div>
         </div>
 
-        <div className="mt-3 pt-3 border-t border-border flex justify-between text-xs">
-          <button
-            onClick={() => setSelectedNode(id)}
-            className="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <Settings className="w-3 h-3" />
-            Settings
-          </button>
-        </div>
+        
       </div>
 
       <Handle type="source" position={Position.Bottom} className="w-3 h-3 !bg-node-embedBorder" />

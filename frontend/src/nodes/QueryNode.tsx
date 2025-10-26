@@ -1,11 +1,12 @@
 import { memo } from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
-import { Search, Settings } from 'lucide-react';
+import { Search } from 'lucide-react';
 import { useWorkflowStore } from '@/state/useWorkflowStore';
 import { NodeDeleteButton } from '@/components/NodeDeleteButton';
+import { Slider } from '@/components/ui/slider';
 
 const QueryNode = ({ id, data }: NodeProps) => {
-  const { updateNodeData, setSelectedNode, deleteNode } = useWorkflowStore();
+  const { updateNodeData, deleteNode } = useWorkflowStore();
 
   const k = data.config?.k || 4;
 
@@ -46,13 +47,16 @@ const QueryNode = ({ id, data }: NodeProps) => {
               <label className="text-sm text-muted-foreground">Top K results:</label>
               <span className="text-sm font-medium">{k}</span>
             </div>
-            <input
-              type="range"
-              min="1"
-              max="10"
-              value={k}
-              onChange={(e) => handleKChange(parseInt(e.target.value))}
-              className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-node-queryBorder"
+            <Slider
+              min={1}
+              max={10}
+              step={1}
+              value={[k]}
+              onValueChange={(vals) => handleKChange(vals[0])}
+              className="w-full"
+              trackClassName="bg-node-query/40"
+              rangeClassName="bg-node-queryBorder"
+              thumbClassName="border-node-queryBorder"
             />
           </div>
 
@@ -74,15 +78,7 @@ const QueryNode = ({ id, data }: NodeProps) => {
           </div>
         </div>
 
-        <div className="mt-3 pt-3 border-t border-border flex justify-between text-xs">
-          <button
-            onClick={() => setSelectedNode(id)}
-            className="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <Settings className="w-3 h-3" />
-            Settings
-          </button>
-        </div>
+        
       </div>
 
       <Handle type="source" position={Position.Bottom} className="w-3 h-3 !bg-node-queryBorder" />

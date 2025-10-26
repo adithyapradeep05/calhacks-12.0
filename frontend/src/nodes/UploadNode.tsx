@@ -1,6 +1,6 @@
 import { memo, useState, useCallback } from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
-import { Upload, FileText, Settings } from 'lucide-react';
+import { Upload, FileText } from 'lucide-react';
 import { useWorkflowStore } from '@/state/useWorkflowStore';
 import { uploadFile } from '@/lib/api';
 import { Button } from '@/components/ui/button';
@@ -10,7 +10,7 @@ const UploadNode = ({ id, data }: NodeProps) => {
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
-  const { updateNodeData, updateNodeStatus, setSelectedNode, deleteNode } = useWorkflowStore();
+  const { updateNodeData, updateNodeStatus, deleteNode } = useWorkflowStore();
 
   const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
@@ -149,7 +149,7 @@ const UploadNode = ({ id, data }: NodeProps) => {
               ) : (
                 <div className="text-sm text-muted-foreground">
                   <div className="mb-2">
-                    {dragOver ? '📁 Drop file here' : '📁 Click to select file or drag & drop'}
+                    {dragOver ? 'Drop file here' : 'Click to select file or drag & drop'}
                   </div>
                   <div className="text-xs">Supports: .pdf, .txt, .md</div>
                 </div>
@@ -164,9 +164,9 @@ const UploadNode = ({ id, data }: NodeProps) => {
             size="sm"
           >
             {uploading ? 'Uploading...' : 
-             data.status === 'success' ? '✅ Uploaded' : 
+             data.status === 'success' ? 'Uploaded' : 
              !file ? 'Select a file first' : 
-             '📤 Upload File'}
+             'Upload File'}
           </Button>
 
           {data.config?.filename && (
@@ -176,15 +176,7 @@ const UploadNode = ({ id, data }: NodeProps) => {
           )}
         </div>
 
-        <div className="mt-3 pt-3 border-t border-border flex justify-between text-xs">
-          <button
-            onClick={() => setSelectedNode(id)}
-            className="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <Settings className="w-3 h-3" />
-            Settings
-          </button>
-        </div>
+        
       </div>
 
       <Handle type="source" position={Position.Bottom} className="w-3 h-3 !bg-node-uploadBorder" />
