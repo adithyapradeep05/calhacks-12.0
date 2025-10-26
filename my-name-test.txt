@@ -1,0 +1,8 @@
+My name is Adith and I am testing the RAGFlow system.
+
+This document contains my personal information:
+- Name: Adith
+- Testing: RAGFlow document processing system
+- Purpose: To verify that the system can retrieve and answer questions about my name
+
+When asked "What is my name?", the system should respond with "Your name is Adith."
