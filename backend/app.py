@@ -3,6 +3,7 @@ import json
 import hashlib
 import time
 import math
+import uuid
 from typing import List, Dict, Any, Optional, Tuple
 from pathlib import Path
 import re
@@ -19,6 +20,12 @@ from google.generativeai.types import HarmCategory, HarmBlockThreshold
 import anthropic
 import openai
 import PyPDF2
+import boto3
+import redis
+from supabase import create_client, Client
+
+# Import cache manager
+from managers.cache_manager import get_cache_manager
 
 # Environment variables
 EMBED_PROVIDER = os.getenv("EMBED_PROVIDER", "OPENAI")  # Default to OpenAI
@@ -31,26 +38,89 @@ CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "100"))  # More overlap for conte
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-3-sonnet-20240229")
 
+# Enhanced MVP Environment variables
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+AWS_ACCESS_KEY = os.getenv("AWS_ACCESS_KEY_ID")
+AWS_SECRET_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
+S3_BUCKET = os.getenv("S3_BUCKET", "ragflow-mvp-docs")
+
 # Initialize Gemini (only if using Gemini)
 if EMBED_PROVIDER == "GEMINI":
     if not GOOGLE_API_KEY:
-        raise ValueError("GOOGLE_API_KEY is required when EMBED_PROVIDER=GEMINI")
-    genai.configure(api_key=GOOGLE_API_KEY)
+        print("⚠️ GOOGLE_API_KEY not set, using fallback embedding")
+    else:
+        genai.configure(api_key=GOOGLE_API_KEY)
 
 # Initialize OpenAI (only if using OpenAI)
 if EMBED_PROVIDER == "OPENAI":
     if not OPENAI_API_KEY:
-        raise ValueError("OPENAI_API_KEY is required when EMBED_PROVIDER=OPENAI")
-    openai.api_key = OPENAI_API_KEY
+        print("⚠️ OPENAI_API_KEY not set, using fallback embedding")
+        openai.api_key = "dummy-key"  # Will use fallback
+    else:
+        openai.api_key = OPENAI_API_KEY
 
 # Initialize Claude
 claude_client = None
 if ANTHROPIC_API_KEY:
     claude_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
-# Initialize ChromaDB
-chroma_client = chromadb.PersistentClient(path="./storage/chroma")
-collection = chroma_client.get_or_create_collection("ragflow")
+# Initialize enhanced services
+try:
+    redis_client = redis.from_url(REDIS_URL)
+    print(f"✅ Redis connected: {REDIS_URL}")
+except Exception as e:
+    print(f"⚠️ Redis connection failed: {e}")
+    redis_client = None
+
+# Initialize multi-level cache manager
+try:
+    cache_manager = get_cache_manager()
+    print("✅ Multi-level cache manager initialized")
+except Exception as e:
+    print(f"⚠️ Cache manager initialization failed: {e}")
+    cache_manager = None
+
+try:
+    if SUPABASE_URL and SUPABASE_KEY:
+        supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        print("✅ Supabase connected")
+    else:
+        supabase = None
+        print("⚠️ Supabase not configured")
+except Exception as e:
+    print(f"⚠️ Supabase connection failed: {e}")
+    supabase = None
+
+# Initialize S3 client (using Supabase Storage as fallback)
+try:
+    if AWS_ACCESS_KEY and AWS_SECRET_KEY:
+        s3_client = boto3.client('s3', 
+                                aws_access_key_id=AWS_ACCESS_KEY,
+                                aws_secret_access_key=AWS_SECRET_KEY)
+        print("✅ S3 client initialized")
+    else:
+        # Use Supabase Storage as S3 alternative
+        s3_client = "supabase_storage"  # Flag for Supabase Storage usage
+        print("✅ Using Supabase Storage instead of S3")
+except Exception as e:
+    print(f"⚠️ S3 initialization failed: {e}")
+    s3_client = None
+
+# Initialize ChromaDB with multiple collections for categories
+# Initialize ChromaDB with telemetry disabled
+chroma_client = chromadb.PersistentClient(
+    path="./storage/chroma",
+    settings=Settings(anonymized_telemetry=False)
+)
+collections = {
+    "legal": chroma_client.get_or_create_collection("legal_docs"),
+    "technical": chroma_client.get_or_create_collection("technical_docs"),
+    "financial": chroma_client.get_or_create_collection("financial_docs"),
+    "hr": chroma_client.get_or_create_collection("hr_docs"),
+    "general": chroma_client.get_or_create_collection("general_docs")
+}
 
 # Cache directory
 CACHE_DIR = Path("./storage/cache")
@@ -60,23 +130,92 @@ CACHE_FILE = CACHE_DIR / "embeddings.jsonl"
 # Global cache
 embedding_cache = {}
 
+# Simple category classifier for MVP
+class SimpleCategoryClassifier:
+    def __init__(self):
+        self.keywords = {
+            "legal": ["contract", "agreement", "terms", "liability", "legal", "compliance", "law", "court", "attorney"],
+            "technical": ["api", "code", "implementation", "architecture", "technical", "specification", "software", "programming", "development"],
+            "financial": ["budget", "cost", "revenue", "expense", "financial", "money", "accounting", "finance", "payment", "invoice"],
+            "hr": ["employee", "policy", "benefits", "training", "hr", "human resources", "staff", "personnel", "workplace"]
+        }
+    
+    def classify(self, text: str, filename: str = "") -> str:
+        """Simple keyword-based classification"""
+        text_lower = text.lower()
+        filename_lower = filename.lower()
+        
+        scores = {}
+        for category, keywords in self.keywords.items():
+            score = sum(1 for keyword in keywords if keyword in text_lower or keyword in filename_lower)
+            scores[category] = score
+        
+        # Return category with highest score, or 'general' if no matches
+        if max(scores.values()) > 0:
+            return max(scores, key=scores.get)
+        return "general"
+
+# Simple cache manager for MVP
+class SimpleCache:
+    def __init__(self):
+        self.redis = redis_client
+    
+    async def get(self, key: str) -> Optional[Any]:
+        if not self.redis:
+            return None
+        try:
+            result = self.redis.get(key)
+            return json.loads(result) if result else None
+        except Exception as e:
+            print(f"Cache get error: {e}")
+            return None
+    
+    async def set(self, key: str, value: Any, ttl: int = 3600):
+        if not self.redis:
+            return
+        try:
+            self.redis.setex(key, ttl, json.dumps(value))
+        except Exception as e:
+            print(f"Cache set error: {e}")
+
 # Pydantic models
+class UploadRequest(BaseModel):
+    namespace: str = "default"
+
 class EmbedRequest(BaseModel):
-    path: str
+    document_id: str
     namespace: str
 
 class QueryRequest(BaseModel):
     namespace: str
     query: str
     k: int = 4
-    rerank: Optional[str] = None
 
 class UploadResponse(BaseModel):
-    path: str
-    namespace: str
+    document_id: str
+    category: str
+    filename: str
+    storage_path: str
+    processing_time_ms: int
 
-# Initialize FastAPI app
-app = FastAPI(title="RAGFlow Backend", version="1.0.0")
+# Lifespan event handler (replaces deprecated @app.on_event)
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Load cache on startup."""
+    load_cache()
+    print("🚀 RAGFlow MVP Enterprise Backend Started")
+    print(f"📊 Categories: {list(collections.keys())}")
+    yield
+    # Cleanup code here if needed
+    print(f"🔧 Embed Provider: {EMBED_PROVIDER}")
+    print(f"💾 Redis: {'✅' if redis_client else '❌'}")
+    print(f"🗄️ Supabase: {'✅' if supabase else '❌'}")
+    print(f"☁️ S3: {'✅' if s3_client else '❌'}")
+
+# Initialize FastAPI app with lifespan handler
+app = FastAPI(title="RAGFlow MVP Enterprise", version="1.0.0", lifespan=lifespan)
 
 # CORS middleware
 app.add_middleware(
@@ -87,7 +226,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Utility functions
+# Initialize services
+classifier = SimpleCategoryClassifier()
+cache = SimpleCache()
+
+# Utility functions (keep existing ones)
 def normalize_text(s: str) -> str:
     """Normalize text by lowercasing and squeezing whitespace."""
     return re.sub(r'\s+', ' ', s.lower().strip())
@@ -140,55 +283,6 @@ def cosine_similarity(a: List[float], b: List[float]) -> float:
         return 0
     return dot_product / (norm_a * norm_b)
 
-def l2_norm(vector: List[float]) -> float:
-    """Compute L2 norm of a vector."""
-    return math.sqrt(sum(x * x for x in vector))
-
-def mmr_rerank(query_vector: List[float], candidate_vectors: List[List[float]], 
-                top_k: int, lambda_param: float = 0.5) -> List[int]:
-    """MMR reranking algorithm."""
-    if not candidate_vectors:
-        return []
-    
-    n = len(candidate_vectors)
-    if n <= top_k:
-        return list(range(n))
-    
-    # Initialize with most relevant document
-    similarities = [cosine_similarity(query_vector, vec) for vec in candidate_vectors]
-    selected = [similarities.index(max(similarities))]
-    remaining = set(range(n)) - set(selected)
-    
-    # Iteratively select documents that maximize MMR score
-    while len(selected) < top_k and remaining:
-        best_score = -float('inf')
-        best_idx = None
-        
-        for idx in remaining:
-            # Relevance to query
-            relevance = similarities[idx]
-            
-            # Maximum similarity to already selected documents
-            max_sim = 0
-            for sel_idx in selected:
-                sim = cosine_similarity(candidate_vectors[idx], candidate_vectors[sel_idx])
-                max_sim = max(max_sim, sim)
-            
-            # MMR score
-            mmr_score = lambda_param * relevance - (1 - lambda_param) * max_sim
-            
-            if mmr_score > best_score:
-                best_score = mmr_score
-                best_idx = idx
-        
-        if best_idx is not None:
-            selected.append(best_idx)
-            remaining.remove(best_idx)
-        else:
-            break
-    
-    return selected
-
 def extract_pdf_text(file_path: str) -> str:
     """Extract text from PDF file."""
     try:
@@ -205,10 +299,24 @@ def extract_pdf_text(file_path: str) -> str:
             # Final cleanup
             text = text.strip()
             print(f"DEBUG: Extracted PDF text length: {len(text)}")
-            print(f"DEBUG: PDF text preview: {text[:200]}...")
             return text
     except Exception as e:
         raise Exception(f"Error extracting PDF text: {str(e)}")
+
+def extract_pdf_text_from_bytes(content: bytes) -> str:
+    """Extract text from PDF bytes."""
+    try:
+        import io
+        pdf_reader = PyPDF2.PdfReader(io.BytesIO(content))
+        text = ""
+        for page in pdf_reader.pages:
+            page_text = page.extract_text()
+            if page_text:
+                page_text = ' '.join(page_text.split())
+                text += page_text + "\n"
+        return text.strip()
+    except Exception as e:
+        raise Exception(f"Error extracting PDF text from bytes: {str(e)}")
 
 def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, chunk_overlap: int = CHUNK_OVERLAP) -> List[str]:
     """Split text into overlapping chunks with better handling of small documents."""
@@ -274,19 +382,27 @@ def embed_texts(texts: List[str], model: str = None) -> List[List[float]]:
                 try:
                     if EMBED_PROVIDER == "OPENAI":
                         # Get embedding from OpenAI
-                        response = openai.embeddings.create(
-                            model=model,
-                            input=text
-                        )
-                        embedding = response.data[0].embedding
+                        if OPENAI_API_KEY and OPENAI_API_KEY != "dummy-key":
+                            response = openai.embeddings.create(
+                                model=model,
+                                input=text
+                            )
+                            embedding = response.data[0].embedding
+                        else:
+                            # Use fallback embedding (simple hash-based)
+                            embedding = create_fallback_embedding(text)
                     else:
                         # Get embedding from Gemini
-                        result = genai.embed_content(
-                            model=model,
-                            content=text,
-                            task_type="retrieval_document"
-                        )
-                        embedding = result['embedding']
+                        if GOOGLE_API_KEY:
+                            result = genai.embed_content(
+                                model=model,
+                                content=text,
+                                task_type="retrieval_document"
+                            )
+                            embedding = result['embedding']
+                        else:
+                            # Use fallback embedding
+                            embedding = create_fallback_embedding(text)
                     
                     batch_embeddings.append(embedding)
                     
@@ -294,414 +410,541 @@ def embed_texts(texts: List[str], model: str = None) -> List[List[float]]:
                     cache_put(model, text, embedding)
                 except Exception as e:
                     print(f"Error embedding text with {EMBED_PROVIDER}: {e}")
-                    # Use zero vector as fallback (dimension depends on model)
-                    fallback_dim = 1536 if EMBED_PROVIDER == "OPENAI" else 768
-                    batch_embeddings.append([0.0] * fallback_dim)
+                    # Use fallback embedding
+                    embedding = create_fallback_embedding(text)
+                    batch_embeddings.append(embedding)
         
         embeddings.extend(batch_embeddings)
     
     return embeddings
+
+def create_fallback_embedding(text: str, dimension: int = 1536) -> List[float]:
+    """Create a simple fallback embedding based on text hash"""
+    import hashlib
+    import math
+    
+    # Create a deterministic "embedding" based on text hash
+    text_hash = hashlib.md5(text.encode()).hexdigest()
+    
+    # Convert hash to numbers and normalize
+    embedding = []
+    for i in range(0, len(text_hash), 2):
+        hex_pair = text_hash[i:i+2]
+        val = int(hex_pair, 16) / 255.0  # Normalize to 0-1
+        embedding.append(val)
+    
+    # Pad or truncate to desired dimension
+    while len(embedding) < dimension:
+        embedding.append(0.0)
+    
+    embedding = embedding[:dimension]
+    
+    # Normalize the vector
+    norm = math.sqrt(sum(x*x for x in embedding))
+    if norm > 0:
+        embedding = [x/norm for x in embedding]
+    
+    return embedding
 
 def log_request(route: str, duration_ms: int, namespace: str, **kwargs):
     """Log request with route, duration, namespace, and counts."""
     counts = " ".join([f"{k}={v}" for k, v in kwargs.items()])
     print(f"{route} ns={namespace} {counts} ms={duration_ms}")
 
-# Startup event
-@app.on_event("startup")
-async def startup_event():
-    """Load cache on startup."""
-    load_cache()
-
-# Routes
+# Enhanced upload endpoint with categorization
 @app.post("/upload")
-async def upload_file(file: UploadFile = File(...)):
-    """Upload a file and return its path."""
+async def upload_file_enhanced(file: UploadFile = File(...), namespace: str = "default"):
+    """Enhanced file upload with automatic categorization"""
     start_time = time.time()
     
-    # Check file size (max 10MB)
-    if file.size and file.size > 10 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="File too large")
+    # Check file size (max 50MB for MVP)
+    if file.size and file.size > 50 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="File too large (max 50MB)")
     
-    # Create uploads directory
-    uploads_dir = Path("./storage/uploads")
-    uploads_dir.mkdir(parents=True, exist_ok=True)
+    # Read file content
+    content = await file.read()
     
-    # Save file
-    file_path = uploads_dir / file.filename
-    with open(file_path, "wb") as buffer:
-        content = await file.read()
-        buffer.write(content)
+    # Extract text for classification
+    text = ""
+    if file.filename.endswith('.pdf'):
+        try:
+            text = extract_pdf_text_from_bytes(content)
+        except Exception as e:
+            print(f"PDF extraction error: {e}")
+            text = f"PDF document: {file.filename}"
+    else:
+        try:
+            text = content.decode('utf-8')
+        except Exception as e:
+            print(f"Text extraction error: {e}")
+            text = f"Document: {file.filename}"
+    
+    # Classify document
+    category = classifier.classify(text, file.filename)
+    print(f"📁 Document classified as: {category}")
+    
+    # Generate document ID
+    doc_id = str(uuid.uuid4())
+    
+    # Store file (S3 if available, otherwise local)
+    storage_path = ""
+    if s3_client:
+        try:
+            s3_key = f"{category}/{doc_id}/{file.filename}"
+            s3_client.put_object(
+                Bucket=S3_BUCKET,
+                Key=s3_key,
+                Body=content
+            )
+            storage_path = f"s3://{S3_BUCKET}/{s3_key}"
+            print(f"☁️ Stored in S3: {s3_key}")
+        except Exception as e:
+            print(f"S3 upload error: {e}")
+            # Fallback to local storage
+            local_path = f"./storage/uploads/{doc_id}_{file.filename}"
+            with open(local_path, "wb") as f:
+                f.write(content)
+            storage_path = local_path
+    else:
+        # Local storage fallback
+        local_path = f"./storage/uploads/{doc_id}_{file.filename}"
+        Path("./storage/uploads").mkdir(parents=True, exist_ok=True)
+        with open(local_path, "wb") as f:
+            f.write(content)
+        storage_path = local_path
+    
+    # Store metadata in Supabase if available
+    if supabase:
+        try:
+            supabase.table("documents").insert({
+                "id": doc_id,
+                "filename": file.filename,
+                "category": category,
+                "s3_key": storage_path,
+                "file_size": file.size,
+                "namespace": namespace,
+                "upload_time": time.time()
+            }).execute()
+            print(f"📊 Metadata stored in Supabase")
+        except Exception as e:
+            print(f"Supabase error: {e}")
     
     duration_ms = int((time.time() - start_time) * 1000)
-    log_request("POST /upload", duration_ms, "upload", file_size=len(content))
+    log_request("POST /upload", duration_ms, namespace, 
+               file_size=file.size, category=category)
     
-    # Return format expected by frontend
     return {
-        "file_id": str(hash(file.filename)),
-        "path": str(file_path),
-        "filename": file.filename
+        "document_id": doc_id,
+        "category": category,
+        "filename": file.filename,
+        "storage_path": storage_path,
+        "processing_time_ms": duration_ms
     }
 
+# Enhanced embed endpoint with category-specific storage
 @app.post("/embed")
-async def embed_document(request: EmbedRequest):
-    """Embed a document with chunk guards, dedup, and cache."""
+async def embed_document_enhanced(request: EmbedRequest):
+    """Enhanced document embedding with category-specific storage"""
     start_time = time.time()
     
-    try:
-        # Read file based on extension
-        file_path = Path(request.path)
-        print(f"DEBUG: Reading file: {file_path}")
-        print(f"DEBUG: File extension: {file_path.suffix}")
-        
-        if file_path.suffix.lower() == '.pdf':
-            text = extract_pdf_text(request.path)
-        else:
-            with open(request.path, 'r', encoding='utf-8') as f:
-                text = f.read()
-        
-        print(f"DEBUG: Extracted text length: {len(text)}")
-        print(f"DEBUG: Text preview: {text[:200]}...")
-        
-        if not text.strip():
-            raise HTTPException(status_code=400, detail="Empty file or no text extracted")
-        
-        # Chunk the text
-        chunks = chunk_text(text, CHUNK_SIZE, CHUNK_OVERLAP)
-        chunks_in = len(chunks)
-        
-        # Apply chunk guards (truncate to 6000 chars)
-        truncated_chunks = [truncate_chunk(chunk, 6000) for chunk in chunks]
-        
-        # Deduplication
-        seen_hashes = set()
-        unique_chunks = []
-        chunk_metadata = []
-        
-        for i, chunk in enumerate(truncated_chunks):
-            normalized = normalize_text(chunk)
-            chunk_hash = md5_hash(normalized)
-            
-            if chunk_hash not in seen_hashes:
-                seen_hashes.add(chunk_hash)
-                unique_chunks.append(chunk)
-                chunk_metadata.append({
-                    "hash": chunk_hash,
-                    "len": len(chunk),
-                    "chunk_index": i,
-                    "namespace": request.namespace
-                })
-        
-        chunks_added = len(unique_chunks)
-        chunks_deduped = chunks_in - chunks_added
-        
-        if chunks_added > 0:
-            # Debug: Print what we're storing
-            print(f"DEBUG: Storing {chunks_added} chunks in ChromaDB")
-            for i, chunk in enumerate(unique_chunks[:2]):  # Show first 2 chunks
-                print(f"DEBUG: Chunk {i+1} preview: {chunk[:100]}...")
-                print(f"DEBUG: Chunk {i+1} length: {len(chunk)}")
-            
-            # Get embeddings
-            embeddings = embed_texts(unique_chunks)
-            embedding_dim = len(embeddings[0]) if embeddings else (1536 if EMBED_PROVIDER == "OPENAI" else 768)
-            
-            # Store in ChromaDB
-            ids = [f"{request.namespace}_{i}" for i in range(len(unique_chunks))]
-            print(f"DEBUG: Storing with IDs: {ids[:3]}...")  # Show first 3 IDs
-            
-            collection.add(
-                documents=unique_chunks,
-                embeddings=embeddings,
-                metadatas=chunk_metadata,
-                ids=ids
-            )
-            print(f"DEBUG: Successfully stored {chunks_added} chunks in ChromaDB")
-        else:
-            embedding_dim = 1536 if EMBED_PROVIDER == "OPENAI" else 768
-        
-        duration_ms = int((time.time() - start_time) * 1000)
-        log_request("POST /embed", duration_ms, request.namespace, 
-                   chunks_in=chunks_in, chunks_added=chunks_added, chunks_deduped=chunks_deduped)
-        
-        # Return format expected by frontend
-        return {
-            "chunks": chunks_added,
-            "namespace": request.namespace
-        }
-        
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="File not found")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")
-
-@app.post("/query")
-async def query_documents(request: QueryRequest):
-    """Query documents with optional MMR reranking."""
-    start_time = time.time()
+    # Handle both document_id and path formats for compatibility
+    doc_id = getattr(request, 'document_id', None)
+    file_path = getattr(request, 'path', None)
     
-    # Set a maximum processing time of 45 seconds
-    MAX_PROCESSING_TIME = 45
+    if not doc_id and not file_path:
+        raise HTTPException(status_code=400, detail="Either document_id or path is required")
     
-    try:
-        print(f"DEBUG: Starting query for namespace: {request.namespace}")
-        print(f"DEBUG: Query: {request.query}")
-        print(f"DEBUG: K value: {request.k}")
-        
-        # Validate inputs
-        if not request.query or not request.query.strip():
-            raise HTTPException(status_code=400, detail="Query cannot be empty")
-        
-        if not request.namespace or not request.namespace.strip():
-            raise HTTPException(status_code=400, detail="Namespace cannot be empty")
-        
-        if request.k <= 0:
-            raise HTTPException(status_code=400, detail="K must be greater than 0")
-        
-        # Check timeout
-        if time.time() - start_time > MAX_PROCESSING_TIME:
-            raise HTTPException(status_code=408, detail="Query processing timeout")
-        
-        # Get query embedding
-        print(f"DEBUG: Generating embedding for query: {request.query}")
+    # Get document metadata
+    doc_metadata = None
+    category = "general"  # Default fallback
+    storage_path = ""
+    
+    if doc_id and supabase:
         try:
-            query_embedding = embed_texts([request.query])[0]
-            print(f"DEBUG: Query embedding generated, length: {len(query_embedding)}")
+            result = supabase.table("documents").select("*").eq("id", doc_id).execute()
+            if result.data:
+                doc_metadata = result.data[0]
+                category = doc_metadata["category"]
+                storage_path = doc_metadata["s3_key"]
         except Exception as e:
-            print(f"ERROR: Failed to generate query embedding: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to generate query embedding: {str(e)}")
-        
-        # Get candidates (more than k for MMR)
-        candidate_count = max(request.k, 12) if request.rerank == "mmr" else request.k
-        
-        # Check timeout before ChromaDB query
-        if time.time() - start_time > MAX_PROCESSING_TIME:
-            raise HTTPException(status_code=408, detail="Query processing timeout")
-        
-        print(f"DEBUG: Querying ChromaDB with candidate_count: {candidate_count}")
+            print(f"Supabase query error: {e}")
+    
+    if not doc_metadata and file_path:
+        # Fallback: classify based on file content
+        print(f"⚠️ No metadata found, classifying file: {file_path}")
         try:
-            results = collection.query(
-                query_embeddings=[query_embedding],
-                n_results=candidate_count,
-                where={"namespace": request.namespace},
-                include=["documents", "metadatas"]
-            )
-            print(f"DEBUG: Query results: {results}")
-        except Exception as e:
-            print(f"ERROR: ChromaDB query failed: {e}")
-            raise HTTPException(status_code=500, detail=f"Database query failed: {str(e)}")
-        
-        if not results or not results.get('documents') or not results['documents'][0]:
-            return {
-                "answer": "No relevant documents found in the specified namespace.",
-                "context": []
-            }
-        
-        documents = results['documents'][0]
-        metadatas = results.get('metadatas', [[]])[0]
-        
-        # For now, skip MMR reranking since we don't have embeddings in results
-        # Take top k
-        documents = documents[:request.k]
-        metadatas = metadatas[:request.k]
-        
-        # Debug: Print what we retrieved from ChromaDB
-        print(f"DEBUG: Retrieved {len(documents)} documents from ChromaDB")
-        for i, doc in enumerate(documents[:2]):  # Show first 2 documents
-            print(f"DEBUG: Retrieved doc {i+1} preview: {doc[:100]}...")
-            print(f"DEBUG: Retrieved doc {i+1} length: {len(doc)}")
-        
-        # Combine context properly - fix malformed text
-        clean_documents = []
-        for doc in documents:
-            if doc and doc.strip():
-                # Remove extra spaces and normalize text
-                clean_doc = ' '.join(doc.split())
-                clean_documents.append(clean_doc)
-        
-        context = "\n\n".join(clean_documents)
-        print(f"DEBUG: Context length: {len(context)} characters")
-        print(f"DEBUG: Context preview: {context[:200]}...")
-        
-        # Check timeout before Claude generation
-        if time.time() - start_time > MAX_PROCESSING_TIME:
-            raise HTTPException(status_code=408, detail="Query processing timeout")
-        
-        # Generate answer using Claude with structured template
-        answer = ""
-        if claude_client and context.strip():
-            try:
-                print(f"DEBUG: Generating answer with Claude model: {CLAUDE_MODEL}")
-                print(f"DEBUG: Context length: {len(context)} characters")
-                
-                # Clean and limit context to avoid token limits
-                clean_context = context[:4000]  # Limit context to avoid token limits
-                
-                # Use a structured template for better responses
-                prompt = f"""You are a helpful AI assistant that answers questions based on provided context. Use the following template to structure your response:
-
-**Question:** {request.query}
-
-**Context:** 
-{clean_context}
-
-**Instructions:**
-1. Analyze the context carefully
-2. Extract relevant information that directly answers the question
-3. Structure your response clearly
-4. If the context doesn't contain enough information, say so explicitly
-5. Be concise but comprehensive
-
-**Response Template:**
-Based on the provided context, here's what I found:
-
-[Your structured answer here]
-
-**Key Points:**
-- [Point 1]
-- [Point 2]
-- [Point 3]
-
-**Sources:** The information above is derived from the provided context."""
-                
-                print(f"DEBUG: Sending structured prompt to Claude (length: {len(prompt)})")
-                
-                response = claude_client.messages.create(
-                    model=CLAUDE_MODEL,
-                    max_tokens=1500,
-                    temperature=0.1,
-                    messages=[{"role": "user", "content": prompt}]
-                )
-                answer = response.content[0].text
-                print(f"DEBUG: Claude response generated successfully (length: {len(answer)})")
-            except Exception as e:
-                print(f"ERROR: Claude response generation failed: {e}")
-                print(f"ERROR: Error type: {type(e).__name__}")
-                # Provide a better fallback with template
-                answer = f"""Based on the retrieved context, here's what I found:
-
-{context[:1000]}...
-
-**Key Points:**
-- Information extracted from {len(documents)} document sources
-- Context length: {len(context)} characters
-- Query: {request.query}
-
-**Note:** This is a fallback response due to an error in the AI processing."""
-        else:
-            if not claude_client:
-                print("WARNING: Claude client not available")
-                answer = f"""Claude is not configured. Here's the relevant context:
-
-{context[:1000]}...
-
-**Key Points:**
-- Information extracted from {len(documents)} document sources
-- Context length: {len(context)} characters
-- Query: {request.query}"""
+            # Read file to classify
+            if file_path.endswith('.pdf'):
+                text = extract_pdf_text(file_path)
             else:
-                print("WARNING: No context available")
-                answer = "No relevant context found for your query."
-        
-        duration_ms = int((time.time() - start_time) * 1000)
-        log_request("POST /query", duration_ms, request.namespace, 
-                   k=request.k, rerank=request.rerank or "none")
-        
-        # Return format expected by frontend
-        return {
-            "answer": answer,
-            "context": documents  # Return as array of strings
-        }
-        
-    except HTTPException:
-        # Re-raise HTTP exceptions
-        raise
-    except Exception as e:
-        print(f"ERROR: Unexpected error in query endpoint: {e}")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
-
-@app.post("/clear")
-async def clear_namespace(request: dict):
-    """Clear all data for a specific namespace."""
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    text = f.read()
+            
+            # Classify the document
+            category = classifier.classify(text, Path(file_path).name)
+            print(f"📁 Document classified as: {category}")
+            storage_path = file_path
+        except Exception as e:
+            print(f"Error reading file for classification: {e}")
+            category = "general"
+            storage_path = file_path
+    
+    if not storage_path:
+        if doc_id:
+            storage_path = f"./storage/uploads/{doc_id}_*"
+        else:
+            raise HTTPException(status_code=400, detail="Could not determine storage path")
+    
+    # Download document content
+    content = None
     try:
-        namespace = request.get("namespace")
-        if not namespace:
-            raise HTTPException(status_code=400, detail="Namespace is required")
-        
-        # Delete all documents with this namespace
-        collection.delete(where={"namespace": namespace})
-        
-        return {"message": f"Cleared namespace: {namespace}"}
+        if storage_path.startswith("s3://") and s3_client:
+            # Download from S3
+            bucket_key = storage_path.replace(f"s3://{S3_BUCKET}/", "")
+            response = s3_client.get_object(Bucket=S3_BUCKET, Key=bucket_key)
+            content = response['Body'].read()
+        else:
+            # Local file
+            if storage_path.startswith("./storage/uploads/"):
+                # Find the actual file
+                upload_dir = Path("./storage/uploads")
+                for file_path in upload_dir.glob(f"{request.document_id}_*"):
+                    with open(file_path, "rb") as f:
+                        content = f.read()
+                    break
+            else:
+                with open(storage_path, "rb") as f:
+                    content = f.read()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error clearing namespace: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error downloading document: {str(e)}")
+    
+    if not content:
+        raise HTTPException(status_code=404, detail="Document content not found")
+    
+    # Extract text
+    if doc_metadata and doc_metadata.get("filename", "").endswith('.pdf'):
+        try:
+            text = extract_pdf_text_from_bytes(content)
+        except Exception as e:
+            print(f"PDF extraction error: {e}")
+            text = "PDF content could not be extracted"
+    else:
+        try:
+            text = content.decode('utf-8')
+        except Exception as e:
+            print(f"Text extraction error: {e}")
+            text = "Text content could not be extracted"
+    
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="No text content extracted from document")
+    
+    # Chunk text
+    chunks = chunk_text(text, CHUNK_SIZE, CHUNK_OVERLAP)
+    
+    # Generate embeddings
+    embeddings = embed_texts(chunks)
+    
+    # Store in category-specific ChromaDB collection
+    collection = collections[category]
+    ids = [f"{request.document_id}_{i}" for i in range(len(chunks))]
+    metadatas = [{
+        "document_id": request.document_id,
+        "chunk_index": i,
+        "category": category,
+        "namespace": request.namespace
+    } for i in range(len(chunks))]
+    
+    collection.add(
+        documents=chunks,
+        embeddings=embeddings,
+        metadatas=metadatas,
+        ids=ids
+    )
+    
+    duration_ms = int((time.time() - start_time) * 1000)
+    log_request("POST /embed", duration_ms, request.namespace, 
+               chunks=len(chunks), category=category)
+    
+    return {
+        "chunks": len(chunks),
+        "category": category,
+        "processing_time_ms": duration_ms
+    }
 
+# Enhanced query endpoint with intelligent routing
+@app.post("/query")
+async def query_documents_enhanced(request: QueryRequest):
+    """Enhanced query with intelligent category routing and caching"""
+    start_time = time.time()
+    
+    # Check multi-level cache first
+    cache_key = f"query:{hashlib.md5(request.query.encode()).hexdigest()}"
+    if cache_manager:
+        cached_result, cache_level = await cache_manager.get(cache_key)
+        if cached_result:
+            print(f"🎯 Cache hit for query (Level: {cache_level})")
+            return cached_result
+    
+    # Simple category detection for query
+    query_category = classifier.classify(request.query)
+    print(f"🔍 Query classified as: {query_category}")
+    
+    # Generate query embedding
+    query_embedding = embed_texts([request.query])[0]
+    
+    # Query category-specific collection
+    collection = collections[query_category]
+    results = collection.query(
+        query_embeddings=[query_embedding],
+        n_results=request.k,
+        where={"namespace": request.namespace},
+        include=["documents", "metadatas", "distances"]
+    )
+    
+    documents = results.get('documents', [[]])[0]
+    metadatas = results.get('metadatas', [[]])[0]
+    distances = results.get('distances', [[]])[0]
+    
+    if not documents:
+        return {
+            "answer": "No relevant documents found.",
+            "context": [],
+            "category": query_category,
+            "processing_time_ms": int((time.time() - start_time) * 1000)
+        }
+    
+    # Generate answer using Claude
+    context = "\n\n".join(documents)
+    answer = ""
+    
+    if claude_client and context:
+        try:
+            prompt = f"""Based on the following context, answer the question: {request.query}
+
+Context:
+{context[:2000]}...
+
+Provide a clear, concise answer based on the context. If the context doesn't contain enough information to answer the question, say so."""
+            
+            response = claude_client.messages.create(
+                model=CLAUDE_MODEL,
+                max_tokens=1000,
+                temperature=0.1,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            answer = response.content[0].text
+        except Exception as e:
+            print(f"Claude error: {e}")
+            answer = f"Based on the context: {context[:500]}..."
+    else:
+        answer = f"Retrieved {len(documents)} relevant documents. Context: {context[:500]}..."
+    
+    # Cache result in multi-level cache
+    result = {
+        "answer": answer,
+        "context": documents,
+        "category": query_category,
+        "sources": len(documents),
+        "processing_time_ms": int((time.time() - start_time) * 1000)
+    }
+    
+    if cache_manager:
+        await cache_manager.set(cache_key, result, ttl=3600)
+    
+    log_request("POST /query", result["processing_time_ms"], request.namespace, 
+               category=query_category, sources=len(documents))
+    
+    return result
+
+# Enhanced stats endpoint
 @app.get("/stats")
-async def get_stats():
-    """Get collection statistics."""
+async def get_stats_enhanced():
+    """Get enhanced statistics with category breakdown"""
     start_time = time.time()
     
     try:
-        # Get all data from collection
-        results = collection.get(include=["metadatas", "documents"])
-        
-        total_vectors = len(results['ids'])
-        
-        # Calculate average chunk length
-        total_length = 0
-        chunk_count = 0
+        total_docs = 0
+        by_category = {}
         by_namespace = {}
         
-        for i, metadata in enumerate(results['metadatas']):
-            if metadata and 'len' in metadata:
-                total_length += metadata['len']
-            elif i < len(results['documents']):
-                total_length += len(results['documents'][i])
-            chunk_count += 1
-            
-            # Count by namespace
-            if metadata and 'namespace' in metadata:
-                ns = metadata['namespace']
-                by_namespace[ns] = by_namespace.get(ns, 0) + 1
+        # Get stats from each collection
+        for category, collection in collections.items():
+            try:
+                count = collection.count()
+                by_category[category] = count
+                total_docs += count
+            except Exception as e:
+                print(f"Error getting count for {category}: {e}")
+                by_category[category] = 0
         
-        avg_chunk_length = total_length // chunk_count if chunk_count > 0 else 0
+        # Get namespace stats if Supabase is available
+        if supabase:
+            try:
+                result = supabase.table("documents").select("namespace").execute()
+                for doc in result.data:
+                    ns = doc.get("namespace", "default")
+                    by_namespace[ns] = by_namespace.get(ns, 0) + 1
+            except Exception as e:
+                print(f"Supabase namespace query error: {e}")
         
         duration_ms = int((time.time() - start_time) * 1000)
-        log_request("GET /stats", duration_ms, "stats", total_vectors=total_vectors)
         
         return {
-            "total_vectors": total_vectors,
-            "avg_chunk_length_chars": avg_chunk_length,
-            "by_namespace": by_namespace
+            "total_documents": total_docs,
+            "by_category": by_category,
+            "by_namespace": by_namespace,
+            "collections": list(collections.keys()),
+            "services": {
+                "redis": "✅" if redis_client else "❌",
+                "supabase": "✅" if supabase else "❌",
+                "s3": "✅" if s3_client else "❌"
+            },
+            "processing_time_ms": duration_ms
         }
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting stats: {str(e)}")
 
-@app.post("/generate")
-async def generate_response(request: dict):
-    """Generate response using Claude."""
+# Frontend-compatible embed endpoint
+@app.post("/embed-file")
+async def embed_file_by_path(request: dict):
+    """Embed file by path (for frontend compatibility)"""
     start_time = time.time()
     
-    if not claude_client:
-        raise HTTPException(status_code=500, detail="Claude client not configured")
+    file_path = request.get("path")
+    namespace = request.get("namespace", "default")
+    
+    if not file_path:
+        raise HTTPException(status_code=400, detail="Path is required")
+    
+    print(f"🔍 Embedding file: {file_path} in namespace: {namespace}")
     
     try:
-        response = claude_client.messages.create(
-            model=CLAUDE_MODEL,
-            max_tokens=1000,
-            messages=[{"role": "user", "content": request.get("prompt", "")}]
+        # Read file content
+        if file_path.endswith('.pdf'):
+            text = extract_pdf_text(file_path)
+        else:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                text = f.read()
+        
+        if not text.strip():
+            raise HTTPException(status_code=400, detail="No text content extracted from document")
+        
+        # Classify the document
+        category = classifier.classify(text, Path(file_path).name)
+        print(f"📁 Document classified as: {category}")
+        
+        # Chunk text
+        chunks = chunk_text(text, CHUNK_SIZE, CHUNK_OVERLAP)
+        print(f"📄 Created {len(chunks)} chunks")
+        
+        # Generate embeddings
+        embeddings = embed_texts(chunks)
+        print(f"🧠 Generated {len(embeddings)} embeddings")
+        
+        # Store in correct category collection
+        collection = collections[category]
+        ids = [f"{namespace}_{i}_{int(time.time())}" for i in range(len(chunks))]
+        metadatas = [{
+            "file_path": file_path,
+            "chunk_index": i,
+            "category": category,
+            "namespace": namespace,
+            "filename": Path(file_path).name
+        } for i in range(len(chunks))]
+        
+        collection.add(
+            documents=chunks,
+            embeddings=embeddings,
+            metadatas=metadatas,
+            ids=ids
         )
         
+        print(f"✅ Successfully stored {len(chunks)} chunks in {category} collection")
+        
         duration_ms = int((time.time() - start_time) * 1000)
-        log_request("POST /generate", duration_ms, "generate")
+        log_request("POST /embed-file", duration_ms, namespace, 
+                   chunks=len(chunks), category=category)
         
         return {
-            "response": response.content[0].text,
-            "ms": duration_ms
+            "chunks": len(chunks),
+            "category": category,
+            "namespace": namespace,
+            "processing_time_ms": duration_ms
         }
         
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="File not found")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error generating response: {str(e)}")
+        print(f"Error processing file: {e}")
+        raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")
+
+# Clear namespace endpoint
+@app.post("/clear")
+async def clear_namespace_enhanced(request: dict):
+    """Clear all data for a specific namespace across all categories"""
+    try:
+        namespace = request.get("namespace")
+        if not namespace:
+            raise HTTPException(status_code=400, detail="Namespace is required")
+        
+        cleared_count = 0
+        
+        # Clear from all collections
+        for category, collection in collections.items():
+            try:
+                # Delete documents with this namespace
+                collection.delete(where={"namespace": namespace})
+                cleared_count += 1
+            except Exception as e:
+                print(f"Error clearing {category} collection: {e}")
+        
+        # Clear from Supabase if available
+        if supabase:
+            try:
+                supabase.table("documents").delete().eq("namespace", namespace).execute()
+            except Exception as e:
+                print(f"Supabase clear error: {e}")
+        
+        return {
+            "message": f"Cleared namespace: {namespace}",
+            "collections_cleared": cleared_count
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error clearing namespace: {str(e)}")
+
+# Cache statistics endpoint
+@app.get("/cache/stats")
+async def cache_stats():
+    """Get multi-level cache statistics"""
+    if not cache_manager:
+        return {"error": "Cache manager not initialized"}
+    
+    stats = cache_manager.get_stats()
+    health = cache_manager.health_check()
+    
+    return {
+        "cache_statistics": stats,
+        "health_status": health,
+        "timestamp": time.time()
+    }
+
+# Health check endpoint
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {
+        "status": "healthy",
+        "timestamp": time.time(),
+        "services": {
+            "redis": "✅" if redis_client else "❌",
+            "supabase": "✅" if supabase else "❌",
+            "s3": "✅" if s3_client else "❌",
+            "chromadb": "✅",
+            "claude": "✅" if claude_client else "❌",
+            "cache": "✅" if cache_manager else "❌"
+        }
+    }
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)

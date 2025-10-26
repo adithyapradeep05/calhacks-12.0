@@ -20,20 +20,19 @@ except ImportError:
 if __name__ == "__main__":
     import uvicorn
     
-    # Check if required environment variables are set based on provider
-    embed_provider = os.getenv("EMBED_PROVIDER", "GEMINI")
+    # Check environment variables (enhanced app has better fallbacks)
+    embed_provider = os.getenv("EMBED_PROVIDER", "OPENAI")
     
-    if embed_provider == "OPENAI":
-        required_vars = ["OPENAI_API_KEY"]
-    else:
-        required_vars = ["GOOGLE_API_KEY"]
+    print(f"Embed Provider: {embed_provider}")
     
-    missing_vars = [var for var in required_vars if not os.getenv(var)]
+    # Warn about missing API keys but don't exit (enhanced app has fallbacks)
+    if embed_provider == "OPENAI" and not os.getenv("OPENAI_API_KEY"):
+        print("⚠️  WARNING: OPENAI_API_KEY not set, using fallback embedding")
+    elif embed_provider == "GEMINI" and not os.getenv("GOOGLE_API_KEY"):
+        print("⚠️  WARNING: GOOGLE_API_KEY not set, using fallback embedding")
     
-    if missing_vars:
-        print(f"ERROR: Missing required environment variables for {embed_provider}: {missing_vars}")
-        print("Please set them in your .env file or environment")
-        sys.exit(1)
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        print("⚠️  WARNING: ANTHROPIC_API_KEY not set, Claude responses will be limited")
     
     print("Starting RAGFlow Backend...")
     print(f"Working directory: {os.getcwd()}")

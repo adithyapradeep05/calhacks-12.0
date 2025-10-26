@@ -9,30 +9,64 @@ const api = axios.create({
 });
 
 export interface UploadResponse {
-  file_id: string;
-  path: string;
+  message: string;
+  document_id: string;
   filename: string;
+  category: string;
+  confidence: number;
+  storage_path: string;
 }
 
 export interface EmbedRequest {
-  path: string;
+  document_id: string;
   namespace: string;
 }
 
 export interface EmbedResponse {
-  chunks: number;
-  namespace: string;
+  message: string;
+  document_id: string;
+  chunks_processed: number;
+  category: string;
 }
 
 export interface QueryRequest {
-  namespace: string;
   query: string;
-  k?: number;
+  namespace: string;
+  max_results?: number;
 }
 
 export interface QueryResponse {
   answer: string;
-  context: string[];
+  context: Array<{
+    content: string;
+    metadata: Record<string, any>;
+    distance: number;
+    category: string;
+  }>;
+  category: string;
+  sources: number;
+  processing_time_ms: number;
+}
+
+export interface StatsResponse {
+  total_documents: number;
+  total_chunks: number;
+  categories: Record<string, number>;
+  cache_stats: Record<string, any>;
+  classification_stats: Record<string, any>;
+}
+
+export interface ClassificationResponse {
+  category: string;
+  confidence: number;
+  reasoning: string;
+  processing_time_ms: number;
+}
+
+export interface CacheStatsResponse {
+  cache_statistics: Record<string, any>;
+  health_status: Record<string, any>;
+  timestamp: number;
 }
 
 export const uploadFile = async (file: File): Promise<UploadResponse> => {
@@ -55,6 +89,21 @@ export const embedDocument = async (data: EmbedRequest): Promise<EmbedResponse> 
 
 export const queryRAG = async (data: QueryRequest): Promise<QueryResponse> => {
   const response = await api.post<QueryResponse>('/query', data);
+  return response.data;
+};
+
+export const getStats = async (): Promise<StatsResponse> => {
+  const response = await api.get<StatsResponse>('/stats');
+  return response.data;
+};
+
+export const classifyDocument = async (text: string, filename: string = ''): Promise<ClassificationResponse> => {
+  const response = await api.post<ClassificationResponse>('/classify', { text, filename });
+  return response.data;
+};
+
+export const getCacheStats = async (): Promise<CacheStatsResponse> => {
+  const response = await api.get<CacheStatsResponse>('/cache/stats');
   return response.data;
 };
 

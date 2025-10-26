@@ -192,7 +192,14 @@ export const ChatPanel = ({ onToast }: { onToast: (message: string, type: 'succe
           <div className="space-y-3">
             <div className="bg-primary/10 rounded-lg p-4">
               <div className="flex items-center justify-between mb-3">
-                <div className="text-sm font-medium text-primary">Answer</div>
+                <div className="flex items-center gap-2">
+                  <div className="text-sm font-medium text-primary">Answer</div>
+                  {context.length > 0 && (
+                    <div className="px-2 py-0.5 bg-primary/20 text-primary text-xs rounded-full">
+                      {context.length} source{context.length !== 1 ? 's' : ''}
+                    </div>
+                  )}
+                </div>
                 <div className="flex gap-2">
                   <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleCopyAnswer} title="Copy answer">
                     <Copy className="w-3.5 h-3.5" />
