@@ -1,4 +1,4 @@
-import { File, Save, Play, Download, Moon, Sun, PlayCircle } from 'lucide-react';
+import { File, Save, Play, Moon, Sun } from 'lucide-react';
 import { useWorkflowStore } from '@/state/useWorkflowStore';
 import { useTheme } from '@/hooks/useTheme';
 import { Button } from '@/components/ui/button';
@@ -29,7 +29,7 @@ export const Toolbar = ({ onToast }: { onToast: (message: string, type: 'success
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'ragflow-workflow.json';
+    a.download = 'velora-workflow.json';
     a.click();
     URL.revokeObjectURL(url);
     
@@ -53,21 +53,13 @@ export const Toolbar = ({ onToast }: { onToast: (message: string, type: 'success
     onToast('Pipeline ready! Use the chat panel to ask questions.', 'success');
   };
 
-  const handleRunFromSelection = () => {
-    if (!selectedNode) {
-      onToast('Please select a node first', 'info');
-      return;
-    }
-    onToast('Run from selection: Coming soon!', 'info');
-  };
-
   return (
     <div className="bg-card border-b border-border p-3 flex items-center gap-3">
       <div className="flex items-center gap-2 mr-4">
         <div className="w-8 h-8 bg-primary rounded flex items-center justify-center">
-          <span className="text-primary-foreground font-bold text-sm">RF</span>
+          <span className="text-primary-foreground font-bold text-sm">V</span>
         </div>
-        <h1 className="text-lg font-bold">RAGFlow</h1>
+        <h1 className="text-lg font-bold">Velora</h1>
       </div>
 
       <Button variant="outline" size="sm" onClick={handleNew}>
@@ -85,20 +77,7 @@ export const Toolbar = ({ onToast }: { onToast: (message: string, type: 'success
         Run from Start
       </Button>
 
-      <Button variant="outline" size="sm" onClick={handleRunFromSelection} disabled={!selectedNode}>
-        <PlayCircle className="w-4 h-4 mr-2" />
-        Run from Selection
-      </Button>
-
       <div className="ml-auto flex items-center gap-2">
-        <label className="text-sm text-muted-foreground">Namespace:</label>
-        <Input
-          value={namespace}
-          onChange={(e) => setNamespace(e.target.value)}
-          placeholder="e.g., my-docs"
-          className="w-48"
-          size={1}
-        />
         <Button variant="ghost" size="icon" onClick={toggleTheme} title="Toggle theme">
           {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
         </Button>

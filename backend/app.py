@@ -14,31 +14,45 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import chromadb
 from chromadb.config import Settings
-import anthropic
 import openai
 import PyPDF2
+import tiktoken
+from dotenv import load_dotenv
+load_dotenv()
 
-# Environment variables (OpenAI only)
+# Environment variables
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_EMBED_MODEL = os.getenv("OPENAI_EMBED_MODEL", "text-embedding-3-small")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
 CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "400"))  # Smaller chunks for better retrieval
 CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "100"))  # More overlap for context
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-3-sonnet-20240229")
+
+# Rate limiting configuration
+MAX_TOKENS_PER_MINUTE = int(os.getenv("MAX_TOKENS_PER_MINUTE", "10000"))
+MAX_TOKENS_PER_HOUR = int(os.getenv("MAX_TOKENS_PER_HOUR", "50000"))
+MAX_REQUESTS_PER_MINUTE = int(os.getenv("MAX_REQUESTS_PER_MINUTE", "20"))
+MAX_COMPLETION_TOKENS = int(os.getenv("MAX_COMPLETION_TOKENS", "800"))
+
+# Token usage tracking (in-memory)
+token_usage = {
+    "minute": {"tokens": 0, "requests": 0, "reset_time": time.time() + 60},
+    "hour": {"tokens": 0, "reset_time": time.time() + 3600}
+}
 
 # Initialize OpenAI
 if not OPENAI_API_KEY:
     raise ValueError("OPENAI_API_KEY is required")
-openai.api_key = OPENAI_API_KEY
 
-# Initialize Claude
-claude_client = None
-if ANTHROPIC_API_KEY:
-    claude_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+# Initialize tiktoken for token counting
+try:
+    encoding = tiktoken.encoding_for_model(OPENAI_MODEL)
+except KeyError:
+    # Fallback to cl100k_base encoding for unknown models
+    encoding = tiktoken.get_encoding("cl100k_base")
 
 # Initialize ChromaDB
 chroma_client = chromadb.PersistentClient(path="./storage/chroma")
-collection = chroma_client.get_or_create_collection("vespora")
+collection = chroma_client.get_or_create_collection("velora")
 
 # Cache directory
 CACHE_DIR = Path("./storage/cache")
@@ -64,7 +78,7 @@ class UploadResponse(BaseModel):
     namespace: str
 
 # Initialize FastAPI app
-app = FastAPI(title="Vespora Backend", version="1.0.0")
+app = FastAPI(title="Velora Backend", version="1.0.0")
 
 # CORS middleware
 app.add_middleware(
@@ -74,6 +88,70 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+def count_tokens(text: str) -> int:
+    """Count tokens in text using tiktoken."""
+    return len(encoding.encode(text))
+
+def check_rate_limits(estimated_tokens: int) -> Tuple[bool, str]:
+    """Check if request would exceed rate limits."""
+    current_time = time.time()
+    
+    # Reset counters if time windows have passed
+    if current_time >= token_usage["minute"]["reset_time"]:
+        token_usage["minute"] = {"tokens": 0, "requests": 0, "reset_time": current_time + 60}
+    
+    if current_time >= token_usage["hour"]["reset_time"]:
+        token_usage["hour"] = {"tokens": 0, "reset_time": current_time + 3600}
+    
+    # Check minute limits
+    if token_usage["minute"]["tokens"] + estimated_tokens > MAX_TOKENS_PER_MINUTE:
+        return False, f"Minute token limit exceeded. Used: {token_usage['minute']['tokens']}, Limit: {MAX_TOKENS_PER_MINUTE}"
+    
+    if token_usage["minute"]["requests"] >= MAX_REQUESTS_PER_MINUTE:
+        return False, f"Minute request limit exceeded. Used: {token_usage['minute']['requests']}, Limit: {MAX_REQUESTS_PER_MINUTE}"
+    
+    # Check hour limits
+    if token_usage["hour"]["tokens"] + estimated_tokens > MAX_TOKENS_PER_HOUR:
+        return False, f"Hour token limit exceeded. Used: {token_usage['hour']['tokens']}, Limit: {MAX_TOKENS_PER_HOUR}"
+    
+    return True, ""
+
+def update_token_usage(actual_tokens: int):
+    """Update token usage counters."""
+    token_usage["minute"]["tokens"] += actual_tokens
+    token_usage["minute"]["requests"] += 1
+    token_usage["hour"]["tokens"] += actual_tokens
+
+def get_usage_stats() -> Dict[str, Any]:
+    """Get current usage statistics."""
+    current_time = time.time()
+    
+    # Calculate remaining time until reset
+    minute_reset = max(0, token_usage["minute"]["reset_time"] - current_time)
+    hour_reset = max(0, token_usage["hour"]["reset_time"] - current_time)
+    
+    return {
+        "minute": {
+            "tokens_used": token_usage["minute"]["tokens"],
+            "tokens_remaining": max(0, MAX_TOKENS_PER_MINUTE - token_usage["minute"]["tokens"]),
+            "requests_used": token_usage["minute"]["requests"],
+            "requests_remaining": max(0, MAX_REQUESTS_PER_MINUTE - token_usage["minute"]["requests"]),
+            "reset_in_seconds": int(minute_reset)
+        },
+        "hour": {
+            "tokens_used": token_usage["hour"]["tokens"],
+            "tokens_remaining": max(0, MAX_TOKENS_PER_HOUR - token_usage["hour"]["tokens"]),
+            "reset_in_seconds": int(hour_reset)
+        },
+        "model": OPENAI_MODEL,
+        "limits": {
+            "max_tokens_per_minute": MAX_TOKENS_PER_MINUTE,
+            "max_tokens_per_hour": MAX_TOKENS_PER_HOUR,
+            "max_requests_per_minute": MAX_REQUESTS_PER_MINUTE,
+            "max_completion_tokens": MAX_COMPLETION_TOKENS
+        }
+    }
 
 # Utility functions
 def normalize_text(s: str) -> str:
@@ -529,19 +607,19 @@ async def query_documents(request: QueryRequest):
             print("WARNING: No valid context after cleaning")
             context = "No relevant information found in the documents."
         
-        # Check timeout before Claude generation
+        # Check timeout before OpenAI generation
         if time.time() - start_time > MAX_PROCESSING_TIME:
             raise HTTPException(status_code=408, detail="Query processing timeout")
         
-        # Generate answer using Claude with structured template
+        # Generate answer using OpenAI with structured template
         answer = ""
-        if claude_client and context.strip():
+        if context.strip():
             try:
-                print(f"DEBUG: Generating answer with Claude model: {CLAUDE_MODEL}")
+                print(f"DEBUG: Generating answer with OpenAI model: {OPENAI_MODEL}")
                 print(f"DEBUG: Context length: {len(context)} characters")
                 
-                # Clean and limit context to avoid token limits
-                clean_context = context[:4000]  # Limit context to avoid token limits
+                # Clean and limit context to avoid token limits (reduced from 4000 to 2000)
+                clean_context = context[:2000]  # Limit context to avoid token limits
                 
                 # Format context snippets with proper numbering and metadata
                 context_snippets = []
@@ -563,7 +641,7 @@ async def query_documents(request: QueryRequest):
                 
                 context_text = "\n\n".join(context_snippets)
                 
-                # Use the rock-solid Vespora prompt template
+                # Use the rock-solid Velora prompt template
                 system_prompt = """You are a **grounded Q&A assistant** answering only from the retrieved CONTEXT.  
 **Do not fabricate** facts. If the CONTEXT is missing or irrelevant, say:  
 > "I don't know based on the provided documents."
@@ -599,34 +677,46 @@ NOTES:
 - Use inline citations like [S1], [S3].
 - Today's date: {time.strftime('%Y-%m-%d')}"""
                 
-                print(f"DEBUG: Sending structured prompt to Claude (system: {len(system_prompt)}, user: {len(user_prompt)})")
+                # Estimate tokens for rate limiting
+                estimated_tokens = count_tokens(system_prompt + user_prompt) + MAX_COMPLETION_TOKENS
                 
-                response = claude_client.messages.create(
-                    model=CLAUDE_MODEL,
-                    max_tokens=1500,
-                    temperature=0.2,  # Slightly higher for better responses
+                # Check rate limits
+                can_proceed, limit_message = check_rate_limits(estimated_tokens)
+                if not can_proceed:
+                    raise HTTPException(status_code=429, detail=f"Rate limit exceeded: {limit_message}")
+                
+                print(f"DEBUG: Sending structured prompt to OpenAI (system: {len(system_prompt)}, user: {len(user_prompt)})")
+                
+                response = openai.chat.completions.create(
+                    model=OPENAI_MODEL,
                     messages=[
-                        {"role": "user", "content": system_prompt + "\n\n" + user_prompt}
-                    ]
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    max_tokens=MAX_COMPLETION_TOKENS,
+                    temperature=0.2,  # Slightly higher for better responses
                 )
-                answer = response.content[0].text
-                print(f"DEBUG: Claude response generated successfully (length: {len(answer)})")
+                
+                answer = response.choices[0].message.content
+                
+                # Update token usage with actual usage
+                actual_tokens = response.usage.total_tokens
+                update_token_usage(actual_tokens)
+                
+                print(f"DEBUG: OpenAI response generated successfully (length: {len(answer)}, tokens: {actual_tokens})")
+            except HTTPException:
+                # Re-raise HTTP exceptions (like rate limits)
+                raise
             except Exception as e:
-                print(f"ERROR: Claude response generation failed: {e}")
+                print(f"ERROR: OpenAI response generation failed: {e}")
                 print(f"ERROR: Error type: {type(e).__name__}")
                 # Provide a clean fallback with proper format
                 answer = f"""**Answer:** I don't know based on the provided documents. The system encountered an error while processing your question.
 
 **Sources:** None available due to processing error."""
         else:
-            if not claude_client:
-                print("WARNING: Claude client not available")
-                answer = f"""**Answer:** I don't know based on the provided documents. The AI system isn't configured properly.
-
-**Sources:** None available due to configuration error."""
-            else:
-                print("WARNING: No context available")
-                answer = """**Answer:** I don't know based on the provided documents. No relevant information was found to answer your question.
+            print("WARNING: No context available")
+            answer = """**Answer:** I don't know based on the provided documents. No relevant information was found to answer your question.
 
 **Sources:** None available - no relevant documents found."""
         
@@ -706,29 +796,78 @@ async def get_stats():
 
 @app.post("/generate")
 async def generate_response(request: dict):
-    """Generate response using Claude."""
+    """Generate response using OpenAI."""
     start_time = time.time()
     
-    if not claude_client:
-        raise HTTPException(status_code=500, detail="Claude client not configured")
-    
     try:
-        response = claude_client.messages.create(
-            model=CLAUDE_MODEL,
-            max_tokens=1000,
-            messages=[{"role": "user", "content": request.get("prompt", "")}]
+        prompt = request.get("prompt", "")
+        if not prompt.strip():
+            raise HTTPException(status_code=400, detail="Prompt cannot be empty")
+        
+        # Estimate tokens for rate limiting
+        estimated_tokens = count_tokens(prompt) + MAX_COMPLETION_TOKENS
+        
+        # Check rate limits
+        can_proceed, limit_message = check_rate_limits(estimated_tokens)
+        if not can_proceed:
+            raise HTTPException(status_code=429, detail=f"Rate limit exceeded: {limit_message}")
+        
+        response = openai.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=MAX_COMPLETION_TOKENS,
+            temperature=0.7
         )
         
+        # Update token usage with actual usage
+        actual_tokens = response.usage.total_tokens
+        update_token_usage(actual_tokens)
+        
         duration_ms = int((time.time() - start_time) * 1000)
-        log_request("POST /generate", duration_ms, "generate")
+        log_request("POST /generate", duration_ms, "generate", tokens=actual_tokens)
         
         return {
-            "response": response.content[0].text,
-            "ms": duration_ms
+            "response": response.choices[0].message.content,
+            "ms": duration_ms,
+            "tokens": actual_tokens
         }
         
+    except HTTPException:
+        # Re-raise HTTP exceptions (like rate limits)
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generating response: {str(e)}")
+
+@app.get("/usage")
+async def get_usage():
+    """Get current token usage statistics."""
+    start_time = time.time()
+    
+    try:
+        stats = get_usage_stats()
+        
+        # Calculate cost estimates based on model pricing
+        # GPT-4o-mini: $0.150/1M input, $0.600/1M output
+        # Rough estimate: assume 70% input, 30% output
+        total_tokens = stats["hour"]["tokens_used"]
+        input_tokens = int(total_tokens * 0.7)
+        output_tokens = int(total_tokens * 0.3)
+        
+        cost_estimate = (input_tokens / 1_000_000 * 0.150) + (output_tokens / 1_000_000 * 0.600)
+        
+        stats["cost_estimate"] = {
+            "hourly_usd": round(cost_estimate, 4),
+            "daily_usd": round(cost_estimate * 24, 2),
+            "monthly_usd": round(cost_estimate * 24 * 30, 2)
+        }
+        
+        duration_ms = int((time.time() - start_time) * 1000)
+        log_request("GET /usage", duration_ms, "usage")
+        
+        return stats
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting usage stats: {str(e)}")
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)

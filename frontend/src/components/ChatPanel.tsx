@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Send, ChevronDown, ChevronUp, Copy, Trash2, Download, FileText } from 'lucide-react';
 import { useWorkflowStore } from '@/state/useWorkflowStore';
 import { queryRAG } from '@/lib/api';
@@ -13,6 +13,15 @@ export const ChatPanel = ({ onToast }: { onToast: (message: string, type: 'succe
   const [context, setContext] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [showSources, setShowSources] = useState(false);
+
+  // Reset chat state when namespace becomes empty (triggered by toolbar New button)
+  useEffect(() => {
+    if (namespace === '') {
+      setAnswer('');
+      setContext([]);
+      setQuestion('');
+    }
+  }, [namespace]);
 
   const handleAsk = async () => {
     if (!question.trim()) return;
@@ -77,7 +86,7 @@ export const ChatPanel = ({ onToast }: { onToast: (message: string, type: 'succe
       // Update LLM node
       if (llmNode) {
         updateNodeData(llmNode.id, {
-          result: { model: 'Claude Sonnet', tokens: response.answer.length },
+          result: { model: 'OpenAI GPT-3.5-turbo', tokens: response.answer.length },
           status: 'success',
         });
         updateNodeStatus(llmNode.id, 'success');
@@ -158,25 +167,6 @@ export const ChatPanel = ({ onToast }: { onToast: (message: string, type: 'succe
       <div className="p-4 border-b border-border">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-lg font-semibold">Chat</h2>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setAnswer('');
-              setContext([]);
-              setQuestion('');
-              setNamespace('');
-              // Reset all nodes
-              nodes.forEach(node => {
-                updateNodeData(node.id, { result: null, status: 'idle' });
-                updateNodeStatus(node.id, 'idle');
-              });
-              onToast('Workflow reset', 'success');
-            }}
-            className="text-xs"
-          >
-            🆕 New
-          </Button>
         </div>
         <div>
           <label className="text-sm text-muted-foreground mb-1 block">Namespace</label>

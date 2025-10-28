@@ -1,1 +1,0 @@
-RAGFlow uses OpenAI embeddings and Claude for generation.

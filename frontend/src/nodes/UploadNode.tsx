@@ -1,4 +1,4 @@
-import { memo, useState, useCallback } from 'react';
+import { memo, useState, useCallback, useEffect } from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
 import { Upload, FileText, Settings } from 'lucide-react';
 import { useWorkflowStore } from '@/state/useWorkflowStore';
@@ -11,6 +11,13 @@ const UploadNode = ({ id, data }: NodeProps) => {
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const { updateNodeData, updateNodeStatus, setSelectedNode, deleteNode } = useWorkflowStore();
+
+  // Reset local file state when node is reset to idle with no result
+  useEffect(() => {
+    if (data.status === 'idle' && !data.result) {
+      setFile(null);
+    }
+  }, [data.status, data.result]);
 
   const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];

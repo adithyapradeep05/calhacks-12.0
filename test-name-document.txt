@@ -1,7 +1,0 @@
-My name is Adith and I am testing RAGFlow.
-
-This is a test document to verify that the system can retrieve personal information.
-
-I am working on a document processing system called RAGFlow that uses vector databases and AI to answer questions about documents.
-
-The system should be able to find my name when asked "What is my name?" and respond with "Your name is Adith."

@@ -1,24 +1,60 @@
-# RAGFlow - Advanced Document Processing System
+# Velora - Document Processing System
 
-RAGFlow is a cutting-edge document processing system that combines the power of vector databases with large language models to create an intelligent document search and question-answering platform.
+A production-ready document processing system built for CalHacks 12.0 that combines vector databases with large language models for intelligent document search and question-answering.
 
-## 🚀 Features
+## Project Information
 
-- **Vector-based Document Search**: Using OpenAI embeddings and ChromaDB
-- **Intelligent Text Chunking**: With overlap for better context
-- **Deduplication**: Prevents redundant content
-- **Caching System**: For faster processing
-- **MMR Reranking**: For diverse and relevant results
-- **Multi-format Support**: PDF, TXT, and Markdown files
-- **Real-time Chat Interface**: For document queries
-- **Structured Responses**: With templates and key points
+**Built at CalHacks 12.0**
 
-## 🛠️ Quick Start
+**Team Members:**
+- Adithya Pradeep (25%) - Backend architecture, AI model integration, and system optimization
+- Paul Pam (25%) - Vector database implementation, embedding systems, and performance tuning
+- Dayyan Ahmed (25%) - Rate limiting systems, token management, and technical infrastructure
+- Madhav Sreeraj Vinod (25%) - Frontend development, workflow visualization, and user interface
+
+**Technical Focus:** Adithya, Paul, and Dayyan led the core technical implementation including backend systems, AI integration, database optimization, and infrastructure, while Madhav focused on frontend development and user experience.
+
+## Technical Stack
+
+### Backend
+- **Framework:** FastAPI (Python)
+- **Vector Database:** ChromaDB 0.4.15
+- **LLM Provider:** OpenAI (GPT-4o-mini, text-embedding-3-small)
+- **Document Processing:** PyPDF2 3.0.1
+- **Token Management:** tiktoken 0.7.0+
+- **Server:** Uvicorn with ASGI
+
+### Frontend
+- **Framework:** React 18.3.1 with TypeScript
+- **Build Tool:** Vite 5.4.19
+- **UI Components:** Radix UI, shadcn/ui
+- **State Management:** Zustand 5.0.8
+- **Workflow Visualization:** ReactFlow 11.11.4
+- **Styling:** TailwindCSS 3.4.17
+
+### Infrastructure
+- **Caching:** JSONL-based embedding cache
+- **Rate Limiting:** Token-based with in-memory tracking
+- **Storage:** Local file system (uploads, ChromaDB persistence)
+- **API:** RESTful endpoints with CORS support
+
+### Key Features
+- Vector-based document search with semantic similarity
+- Intelligent text chunking with configurable overlap
+- Content deduplication using MD5 hashing
+- MMR (Maximum Marginal Relevance) reranking
+- Multi-format support (PDF, TXT, Markdown)
+- Real-time token usage monitoring
+- Configurable rate limiting
+
+## Quick Start
 
 ### Prerequisites
-- Python 3.8+
+- Python 3.8 or higher
+- Node.js 16+ (for frontend)
 - OpenAI API Key
-- Anthropic API Key
+- 2GB minimum RAM
+- 1GB disk space for vector database
 
 ### 1. Clone and Setup
 ```bash
@@ -30,7 +66,7 @@ cd calhacks-12.0
 ```bash
 cd backend
 pip install -r requirements.txt
-cp env_template.txt .env
+cp .env.example .env
 # Edit .env with your API keys
 python run.py
 ```
@@ -44,18 +80,18 @@ npm install
 npm run dev
 ```
 
-## 📋 API Keys Required
+## API Keys Required
 
 1. **OpenAI API Key**: Get from [OpenAI Platform](https://platform.openai.com/api-keys)
-2. **Anthropic API Key**: Get from [Anthropic Console](https://console.anthropic.com/)
 
-Add them to `backend/.env`:
+Add it to `backend/.env`:
 ```
 OPENAI_API_KEY=your_key_here
-ANTHROPIC_API_KEY=your_key_here
 ```
 
-## 🔧 Usage
+**Note**: Copy `.env.example` to `.env` and replace the placeholder values with your actual API keys.
+
+## Usage
 
 ### Upload Document
 ```bash
@@ -76,19 +112,63 @@ curl -X POST http://localhost:8000/query \
   -d '{"namespace": "demo", "query": "What is this document about?", "k": 3}'
 ```
 
-## 🧪 Testing
-
-### Quick Health Check
+### Check Usage Statistics
 ```bash
-python check_backend.py
+curl http://localhost:8000/usage
 ```
 
-### Complete Workflow Test
+## Rate Limiting
+
+The system includes built-in rate limiting to control token usage and costs:
+
+### Default Limits
+- **10,000 tokens per minute**
+- **50,000 tokens per hour** 
+- **20 requests per minute**
+- **800 tokens per completion**
+
+### Configuration
+Set these in your `.env` file:
 ```bash
-python test_complete_workflow.py
+MAX_TOKENS_PER_MINUTE=10000
+MAX_TOKENS_PER_HOUR=50000
+MAX_REQUESTS_PER_MINUTE=20
+MAX_COMPLETION_TOKENS=800
 ```
 
-## 📁 Project Structure
+### Model Options
+- **gpt-3.5-turbo** (default): Best balance of cost/performance
+- **gpt-4o**: Higher quality but expensive
+
+Set in `.env`:
+```bash
+OPENAI_MODEL=gpt-3.5-turbo
+```
+
+### Cost Estimates
+With gpt-3.5-turbo pricing (~$0.0002 per query):
+- ~6 queries per minute maximum
+- ~360 queries per hour
+- ~$0.08/hour maximum cost
+
+## Enterprise Scale Configuration
+
+For production deployment with large contexts:
+
+### Recommended Settings
+```bash
+MAX_TOKENS_PER_MINUTE=100000
+MAX_TOKENS_PER_HOUR=2000000
+MAX_REQUESTS_PER_MINUTE=200
+MAX_COMPLETION_TOKENS=4000
+```
+
+### Context Scaling
+- Remove hard-coded context limits for large documents
+- Implement dynamic context based on available tokens
+- Use Redis for distributed rate limiting across multiple servers
+
+## Project Structure
 
 ```
 calhacks-12.0/
@@ -96,50 +176,34 @@ calhacks-12.0/
 │   ├── app.py        # Main application
 │   ├── run.py        # Startup script
 │   ├── requirements.txt
-│   └── .env          # Environment variables
+│   ├── .env.example  # Environment template
+│   └── .env          # Environment variables (not tracked)
 ├── frontend/         # React frontend
 │   ├── src/
 │   └── package.json
-├── storage/          # Data storage
+├── storage/          # Data storage (not tracked)
 │   ├── chroma/       # ChromaDB data
 │   └── cache/        # Embedding cache
-└── tests/           # Test scripts
+└── README.md
 ```
 
-## 🔍 Troubleshooting
+## Troubleshooting
 
 ### Backend Issues
-1. Check API keys in `.env`
+1. Check API keys in `.env` (copy from `.env.example`)
 2. Verify Python version (3.8+)
 3. Install dependencies: `pip install -r requirements.txt`
 4. Check port 8000 is available
 
 ### Frontend Issues
 1. Install Node.js dependencies: `npm install`
-2. Check port 3000 is available
+2. Check port 8080 is available
 3. Ensure backend is running
 
-## 📚 Documentation
+## License
 
-- [Setup Instructions](SETUP_INSTRUCTIONS.md)
-- [API Documentation](backend/README.md)
-- [Frontend Guide](frontend/README.md)
+MIT License - This project was created for CalHacks 12.0.
 
-## 🤝 Contributing
+## Contact
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
-
-## 📄 License
-
-This project is licensed under the MIT License.
-
-## 🆘 Support
-
-If you encounter issues:
-1. Check the troubleshooting section
-2. Review the setup instructions
-3. Check backend logs for errors
-4. Verify API keys are valid
+For questions about this project, please contact the team members listed above.

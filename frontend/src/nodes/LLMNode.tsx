@@ -47,7 +47,7 @@ const LLMNode = ({ id, data }: NodeProps) => {
         <div className="space-y-2 text-sm">
           <div className="flex justify-between items-center">
             <span className="text-muted-foreground">Model:</span>
-            <span className="font-medium">{data.result?.model || 'Claude Sonnet'}</span>
+            <span className="font-medium">{data.result?.model || 'OpenAI GPT-3.5-turbo'}</span>
           </div>
 
           {data.result?.tokens && (

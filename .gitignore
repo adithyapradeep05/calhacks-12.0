@@ -1,7 +1,14 @@
 # Environment variables
 .env
+.env.*
+.env.local
+.env.development
+.env.production
+.env.staging
 backend/.env
+backend/.env.*
 frontend/.env
+frontend/.env.*
 
 # API Keys and Secrets
 *.key
@@ -81,8 +88,25 @@ build/
 .next/
 out/
 
-# Test files
+# Test files and scripts
+test_*.py
+debug_*.py
+check_*.py
+*_test.py
 test_*.txt
+test_*.md
+test_*.pdf
+*test*.txt
+*test*.md
+*test*.pdf
+my-name-test.txt
+simple_test.py
+simple_backend_test.py
+quick_test.py
+verify_setup.py
+start_backend.py
+create-test-pdf.py
+diagnose_*.py
 debug_*.txt
 *_test.txt
 temp_*.txt
