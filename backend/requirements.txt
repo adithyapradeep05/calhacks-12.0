@@ -8,3 +8,7 @@ python-dotenv==1.0.0
 PyPDF2==3.0.1
 supabase==2.3.0
 tiktoken==0.7.0
+<<<<<<< HEAD
+=======
+python-3.11.9
+>>>>>>> 8ec428c3df08928132d82d338857ca54f876e72c
